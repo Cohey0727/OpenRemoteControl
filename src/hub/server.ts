@@ -244,6 +244,14 @@ export class HubServer {
         // device's session as displayed in browsers.
         const owner = sessionToDevice.get(sessionId);
         if (owner !== ws.data.deviceId) {
+          // Audit the rejection too: an enrolled device probing sessions it
+          // doesn't own is a strong signal of an attack and should leave a
+          // trail even when the request itself is dropped.
+          this.store.audit(
+            ws.data.deviceId ?? 'unknown',
+            'session_event_rejected',
+            `sid=${sessionId} owner=${owner ?? 'none'}`,
+          );
           ws.send(JSON.stringify({ type: 'error', message: 'not owner of session', sessionId }));
           return;
         }
