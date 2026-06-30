@@ -11,7 +11,7 @@
  * for Solid.js. No bundler magic. Future phases may move to Vite for HMR.
  */
 
-import { join } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { PermissionManager } from './permission/manager.ts';
 import { notify } from './push/notifier.ts';
 import { PushStore } from './push/store.ts';
@@ -66,7 +66,10 @@ export async function serve(opts: ServeOptions): Promise<{
   // and CI can skip it.
   let pushStore: PushStore | null = null;
   let vapidPublicKey: string | null = null;
-  if (!opts.pushDisabled) {
+  let pushStatus: 'ok' | 'disabled' | 'init_failed' = 'disabled';
+  if (opts.pushDisabled) {
+    pushStatus = 'disabled';
+  } else {
     const dataDir = process.env.XDG_DATA_HOME ?? `${process.env.HOME}/.local/share`;
     const vapidPath = opts.vapidKeyPath ?? `${dataDir}/open-rc/vapid.json`;
     const pushPath = opts.pushStorePath ?? `${dataDir}/open-rc/push.db`;
@@ -76,8 +79,10 @@ export async function serve(opts: ServeOptions): Promise<{
       configureWebPush(keys, subject);
       pushStore = new PushStore({ path: pushPath });
       vapidPublicKey = keys.publicKey;
+      pushStatus = 'ok';
     } catch (err) {
       console.error('[push] init failed, push disabled:', err);
+      pushStatus = 'init_failed';
     }
   }
 
@@ -97,7 +102,7 @@ export async function serve(opts: ServeOptions): Promise<{
     },
   });
 
-  const indexPath = join(opts.uiDir, 'index.html');
+  const indexPath = resolve(join(opts.uiDir, 'index.html'));
   const hookUrl = `http://${host}:${port}/internal/hook`;
 
   const server = Bun.serve<WsData>({
@@ -119,6 +124,7 @@ export async function serve(opts: ServeOptions): Promise<{
         return Response.json({
           status: 'ok',
           sessions: manager.size,
+          push: pushStatus,
         });
       }
 
@@ -132,12 +138,13 @@ export async function serve(opts: ServeOptions): Promise<{
       // Push — Phase 5
       if (url.pathname === '/api/push/vapid-public-key') {
         if (!pushStore || !vapidPublicKey) {
-          return new Response('push disabled', { status: 404 });
+          return Response.json({ error: 'push_unavailable', status: pushStatus }, { status: 404 });
         }
         return Response.json({ publicKey: vapidPublicKey });
       }
       if (url.pathname === '/api/push/subscribe' && req.method === 'POST') {
-        if (!pushStore) return new Response('push disabled', { status: 404 });
+        if (!pushStore)
+          return Response.json({ error: 'push_unavailable', status: pushStatus }, { status: 404 });
         let body: {
           endpoint?: string;
           keys?: { p256dh?: string; auth?: string };
@@ -159,7 +166,8 @@ export async function serve(opts: ServeOptions): Promise<{
         return Response.json({ id: rec.id });
       }
       if (url.pathname === '/api/push/unsubscribe' && req.method === 'POST') {
-        if (!pushStore) return new Response('push disabled', { status: 404 });
+        if (!pushStore)
+          return Response.json({ error: 'push_unavailable', status: pushStatus }, { status: 404 });
         let body: { endpoint?: string };
         try {
           body = (await req.json()) as typeof body;
@@ -223,7 +231,12 @@ export async function serve(opts: ServeOptions): Promise<{
 
       // Service worker — served from root so it controls '/'.
       if (url.pathname === '/sw.js') {
-        const swPath = join(opts.uiDir, 'sw.js');
+        const swPath = resolve(join(opts.uiDir, 'sw.js'));
+        const uiRoot = resolve(opts.uiDir);
+        const rel = relative(uiRoot, swPath);
+        if (rel === '..' || rel.startsWith(`..${sep}`) || resolve(uiRoot, rel) !== swPath) {
+          return new Response('not found', { status: 404 });
+        }
         const file = Bun.file(swPath);
         if (!(await file.exists())) {
           return new Response('service worker not built', { status: 404 });
@@ -248,7 +261,23 @@ export async function serve(opts: ServeOptions): Promise<{
         url.pathname.endsWith('.png')
       ) {
         const safe = url.pathname.replace(/^\/+/, '');
-        const assetPath = join(opts.uiDir, safe);
+        const assetPath = resolve(join(opts.uiDir, safe));
+        const uiRoot = resolve(opts.uiDir);
+        // Defense against `..` segments and percent-encoded traversal: the
+        // resolved path must stay inside uiDir. `relative()` returns a path
+        // starting with `..` (or an absolute path on Windows) when escape
+        // is attempted.
+        const rel = relative(uiRoot, assetPath);
+        if (
+          rel === '..' ||
+          rel.startsWith(`..${sep}`) ||
+          // Bun resolves `..` against uiDir even for non-existent files,
+          // so also reject absolute paths (Windows) and any segment that
+          // starts with `..` after a separator.
+          resolve(uiRoot, rel) !== assetPath
+        ) {
+          return new Response('not found', { status: 404 });
+        }
         const file = Bun.file(assetPath);
         if (!(await file.exists())) {
           return new Response('not found', { status: 404 });

@@ -239,7 +239,24 @@ export class HubServer {
         const sessionId = msg.sessionId as string | undefined;
         const frame = msg.frame;
         if (!sessionId || typeof frame !== 'object' || frame === null) return;
+        // Only the owning device may stream frames for a session. Without
+        // this check, any enrolled device could spoof events into another
+        // device's session as displayed in browsers.
+        const owner = sessionToDevice.get(sessionId);
+        if (owner !== ws.data.deviceId) {
+          // Audit the rejection too: an enrolled device probing sessions it
+          // doesn't own is a strong signal of an attack and should leave a
+          // trail even when the request itself is dropped.
+          this.store.audit(
+            ws.data.deviceId ?? 'unknown',
+            'session_event_rejected',
+            `sid=${sessionId} owner=${owner ?? 'none'}`,
+          );
+          ws.send(JSON.stringify({ type: 'error', message: 'not owner of session', sessionId }));
+          return;
+        }
         this.broadcast({ type: 'session_event', sessionId, frame });
+        this.store.audit(ws.data.deviceId, 'session_event', `sid=${sessionId}`);
         return;
       }
       case 'session_unregister': {

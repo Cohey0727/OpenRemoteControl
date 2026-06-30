@@ -209,13 +209,14 @@ identity providers.
 
 ---
 
-## Phase 5 — Mobile push & quality-of-life
+## Phase 5 — Web Push & quality-of-life
 
 **Goal.** Phone-first experience.
 
 **Scope.**
 
-- Native iOS + Android push via VAPID.
+- Browser push via VAPID (Web Push API). iOS supports Web Push on
+  home-screen-installed PWAs starting Safari 16.4.
 - Notification grouping per session.
 - Quick-action shortcuts (cancel, view last message).
 - Re-engagement: opening the app mid-turn resumes streaming.

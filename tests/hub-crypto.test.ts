@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { fingerprint, generateKeypair, signNonce, verifyNonce } from '../src/hub/crypto.ts';
 
 describe('hub/crypto', () => {
@@ -40,5 +41,15 @@ describe('hub/crypto', () => {
     const fp2 = fingerprint(kp.publicKeyB64);
     expect(fp1).toBe(fp2);
     expect(fp1.length).toBeLessThanOrEqual(16);
+  });
+
+  test('fingerprint matches SHA-256 of the public key bytes', () => {
+    // Regression for #3: fingerprint() previously returned the first 16 hex
+    // chars of the base64-decoded pubkey rather than hashing it. Lock the
+    // contract: fingerprint must be the first 16 hex chars of SHA-256(pubkey).
+    const kp = generateKeypair();
+    const pub = Buffer.from(kp.publicKeyB64, 'base64');
+    const expected = createHash('sha256').update(pub).digest('hex').slice(0, 16);
+    expect(fingerprint(kp.publicKeyB64)).toBe(expected);
   });
 });

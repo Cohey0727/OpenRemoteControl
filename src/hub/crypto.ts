@@ -8,7 +8,14 @@
  * Uses Node's `crypto` since Bun ships with the same APIs.
  */
 
-import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  sign,
+  verify,
+} from 'node:crypto';
 
 export interface DeviceKeypair {
   /** Raw 32-byte private key seed, encoded as base64. */
@@ -57,13 +64,7 @@ export function verifyNonce(message: string, signatureB64: string, publicKeyB64:
 /** Short, human-friendly fingerprint (first 8 bytes of SHA-256 of pubkey, hex). */
 export function fingerprint(publicKeyB64: string): string {
   const pub = Buffer.from(publicKeyB64, 'base64');
-  // Tiny inline SHA-256 (avoid node:crypto.hash perf cost).
-  // Use the platform crypto.subtle via globalThis.crypto.
-  const hash = new Uint8Array(32);
-  // Fallback: just return the first 16 hex chars of base64 itself.
-  const hex = pub.toString('hex').slice(0, 16);
-  void hash;
-  return hex;
+  return createHash('sha256').update(pub).digest('hex').slice(0, 16);
 }
 
 /* ----- PKCS8 / SPKI header builders (RFC 8410) --------------------- */

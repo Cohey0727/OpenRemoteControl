@@ -13,7 +13,7 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "bun run --watch src/cli.ts serve --port 8080",
+    "dev": "bun run --watch src/cli.ts serve --port 7322",
     "capture": "bun run tools/capture.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
