@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>open-rc</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --bg-elev: #15191e;
+        --bg-elev-2: #1d2229;
+        --fg: #e6e8eb;
+        --fg-muted: #8b95a3;
+        --accent: #6cb6ff;
+        --accent-fg: #0b0d10;
+        --success: #4ade80;
+        --error: #f87171;
+        --border: #2a3038;
+        --thinking-bg: #1a2030;
+        --thinking-fg: #9bb1d4;
+        --tool-bg: #1f1817;
+        --tool-fg: #f5c08e;
+        --tool-result-bg: #14201a;
+        --tool-result-fg: #8fdaa4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-elev);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .btn-push {
+        background: transparent;
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.25rem 0.55rem;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+
+      .btn-push:hover {
+        background: var(--bg-elev-2);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8rem;
+        color: var(--fg-muted);
+      }
+
+      .status .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--fg-muted);
+      }
+
+      .status.connected .dot {
+        background: var(--success);
+      }
+
+      .status.disconnected .dot {
+        background: var(--error);
+      }
+
+      main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+      }
+
+      .messages {
+        max-width: 800px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+
+      .msg {
+        padding: 0.6rem 0.8rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--bg-elev);
+      }
+
+      .msg.user {
+        background: var(--bg-elev-2);
+        border-color: var(--accent);
+      }
+
+      .msg.text {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .msg.text .markdown :first-child {
+        margin-top: 0;
+      }
+      .msg.text .markdown :last-child {
+        margin-bottom: 0;
+      }
+      .msg.text .markdown h1,
+      .msg.text .markdown h2,
+      .msg.text .markdown h3,
+      .msg.text .markdown h4 {
+        margin: 0.7rem 0 0.3rem;
+        line-height: 1.25;
+      }
+      .msg.text .markdown h1 {
+        font-size: 1.25rem;
+      }
+      .msg.text .markdown h2 {
+        font-size: 1.1rem;
+      }
+      .msg.text .markdown h3,
+      .msg.text .markdown h4 {
+        font-size: 1rem;
+      }
+      .msg.text .markdown p {
+        margin: 0.3rem 0;
+      }
+      .msg.text .markdown ul,
+      .msg.text .markdown ol {
+        margin: 0.3rem 0;
+        padding-left: 1.4rem;
+      }
+      .msg.text .markdown code {
+        font-family: ui-monospace, SF Mono, Menlo, monospace;
+        font-size: 0.85em;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 0.05rem 0.3rem;
+        border-radius: 3px;
+      }
+      .msg.text .markdown pre {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.6rem;
+        overflow-x: auto;
+        font-size: 0.85rem;
+        margin: 0.4rem 0;
+      }
+      .msg.text .markdown pre code {
+        background: transparent;
+        padding: 0;
+      }
+      .msg.text .markdown a {
+        color: var(--accent);
+      }
+      .msg.text .markdown blockquote {
+        margin: 0.3rem 0;
+        padding-left: 0.6rem;
+        border-left: 3px solid var(--border);
+        color: var(--fg-muted);
+      }
+
+      .msg.thinking {
+        background: var(--thinking-bg);
+        color: var(--thinking-fg);
+        font-style: italic;
+        font-size: 0.9rem;
+      }
+
+      .msg.tool_use {
+        background: var(--tool-bg);
+        color: var(--tool-fg);
+        font-family: ui-monospace, SF Mono, Menlo, monospace;
+        font-size: 0.85rem;
+      }
+
+      .msg.tool_result {
+        background: var(--tool-result-bg);
+        color: var(--tool-result-fg);
+        font-family: ui-monospace, SF Mono, Menlo, monospace;
+        font-size: 0.85rem;
+      }
+
+      .msg.tool_use .name,
+      .msg.tool_result .name {
+        font-weight: 600;
+        margin-right: 0.4rem;
+      }
+
+      .msg.tool_use pre,
+      .msg.tool_result pre {
+        margin: 0.3rem 0 0;
+        padding: 0.4rem;
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.8rem;
+      }
+
+      .msg details {
+        padding: 0;
+      }
+
+      .msg details summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 0.6rem 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .msg details summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .msg details summary::before {
+        content: '▶';
+        font-size: 0.7rem;
+        color: var(--fg-muted);
+        transition: transform 0.15s ease;
+        flex-shrink: 0;
+      }
+
+      .msg details[open] summary::before {
+        transform: rotate(90deg);
+      }
+
+      .msg details > *:not(summary) {
+        padding: 0 0.8rem 0.6rem;
+      }
+
+      .msg.system {
+        color: var(--fg-muted);
+        font-size: 0.85rem;
+        text-align: center;
+        background: transparent;
+        border-color: transparent;
+      }
+
+      .msg.error {
+        background: rgba(248, 113, 113, 0.12);
+        border-color: var(--error);
+        color: var(--error);
+      }
+
+      .msg .role {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--fg-muted);
+        margin-bottom: 0.2rem;
+      }
+
+      .empty {
+        color: var(--fg-muted);
+        text-align: center;
+        margin-top: 4rem;
+        font-size: 0.9rem;
+      }
+
+      footer {
+        padding: 0.6rem 1rem;
+        border-top: 1px solid var(--border);
+        background: var(--bg-elev);
+      }
+
+      .composer {
+        max-width: 800px;
+        margin: 0 auto;
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .composer textarea {
+        flex: 1;
+        resize: none;
+        min-height: 2.4rem;
+        max-height: 12rem;
+        padding: 0.5rem 0.7rem;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--fg);
+        font: inherit;
+        outline: none;
+      }
+
+      .composer textarea:focus {
+        border-color: var(--accent);
+      }
+
+      .composer button {
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .composer button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .composer .interrupt {
+        background: transparent;
+        color: var(--error);
+        border-color: var(--error);
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+
+      .modal {
+        max-width: 520px;
+        width: 90%;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.2rem;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      .modal-title {
+        font-size: 0.8rem;
+        color: var(--fg-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.4rem;
+      }
+
+      .modal-tool {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--accent);
+        margin-bottom: 0.6rem;
+      }
+
+      .modal-input {
+        margin: 0.4rem 0 1rem;
+        padding: 0.6rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-family: ui-monospace, SF Mono, Menlo, monospace;
+        font-size: 0.8rem;
+        max-height: 14rem;
+        overflow: auto;
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 0.6rem;
+        justify-content: flex-end;
+      }
+
+      .modal-actions button {
+        padding: 0.5rem 1.1rem;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg-elev-2);
+        color: var(--fg);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .modal-actions .allow {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border-color: var(--accent);
+      }
+
+      .modal-actions .deny {
+        color: var(--error);
+        border-color: var(--error);
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      #app .layout {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        width: 220px;
+        background: var(--bg-elev);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        flex-shrink: 0;
+      }
+
+      .sidebar h2 {
+        margin: 0;
+        padding: 0.6rem 0.8rem;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+        letter-spacing: 0.05em;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sidebar ul {
+        list-style: none;
+        margin: 0;
+        padding: 0.4rem 0;
+      }
+
+      .sidebar li {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.85rem;
+        cursor: pointer;
+        color: var(--fg-muted);
+        border-left: 2px solid transparent;
+      }
+
+      .sidebar li:hover {
+        background: var(--bg-elev-2);
+        color: var(--fg);
+      }
+
+      .sidebar li.active {
+        background: var(--bg-elev-2);
+        color: var(--fg);
+        border-left-color: var(--accent);
+      }
+
+      .sidebar .empty {
+        padding: 0.6rem 0.8rem;
+        font-size: 0.8rem;
+        color: var(--fg-muted);
+        font-style: italic;
+      }
+
+      .content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      @media (max-width: 768px) {
+        .sidebar {
+          width: 140px;
+          font-size: 0.8rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        #app .layout {
+          flex-direction: column;
+        }
+        .sidebar {
+          width: 100%;
+          max-height: 30vh;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="importmap">
+      {
+        "imports": {
+          "solid-js": "https://esm.sh/solid-js@1.9.3",
+          "solid-js/": "https://esm.sh/solid-js@1.9.3/",
+          "solid-js/web": "https://esm.sh/solid-js@1.9.3/web",
+          "solid-js/html": "https://esm.sh/solid-js@1.9.3/html",
+          "marked": "https://esm.sh/marked@13.0.3",
+          "highlight.js": "https://esm.sh/highlight.js@11.10.0",
+          "highlight.js/": "https://esm.sh/highlight.js@11.10.0/"
+        }
+      }
+    </script>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

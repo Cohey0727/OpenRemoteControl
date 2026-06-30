@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnp.*
+
+# build artifacts
+dist/
+*.tsbuildinfo
+.open-rc/
+
+# captures (regenerate via `bun run capture`)
+captures/
+*.jsonl
+
+# secrets / config
+*.key
+*.pem
+.env
+.env.local
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# logs
+*.log

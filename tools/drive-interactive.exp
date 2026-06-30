@@ -1,0 +1,32 @@
+#!/usr/bin/env expect -f
+# Drive `claude --remote-control` interactively to force the bridge to connect.
+# Usage: expect tools/drive-interactive.exp
+
+set timeout 20
+
+# Spawn claude in interactive mode with our custom bridge URL
+# Unset API-key auth so the bridge auth gate can fire
+spawn -noecho env -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY \
+  CLAUDE_BRIDGE_BASE_URL=ws://127.0.0.1:8765 \
+  CLAUDE_BRIDGE_OAUTH_TOKEN=dummy-token-for-test \
+  CLAUDE_BRIDGE_USE_CCR_V2=true \
+  claude --remote-control
+
+# Wait for the input prompt
+expect {
+  -re "❯|›|>" {
+    send "say hello\r"
+  }
+  timeout {
+    puts "TIMEOUT waiting for prompt"
+    exit 1
+  }
+}
+
+# Wait for some response / time
+sleep 8
+
+# Try to exit
+send "/exit\r"
+
+expect eof
