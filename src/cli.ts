@@ -45,6 +45,7 @@ if (command === 'serve' || command === '') {
   const claudeBin = typeof flags.claudeBin === 'string' ? flags.claudeBin : undefined;
   const permissionMode =
     typeof flags.permissionMode === 'string' ? flags.permissionMode : undefined;
+  const pushDisabled = flags.pushDisabled === true;
 
   if (Number.isNaN(port)) {
     console.error(`invalid port: ${flags.port}`);
@@ -58,6 +59,7 @@ if (command === 'serve' || command === '') {
     ...(cwd ? { cwd } : {}),
     ...(claudeBin ? { claudeBin } : {}),
     ...(permissionMode ? { permissionMode: permissionMode as 'default' } : {}),
+    ...(pushDisabled ? { pushDisabled } : {}),
   });
 
   console.log(`open-rc serve listening on http://${host}:${port}`);

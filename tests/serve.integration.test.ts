@@ -128,4 +128,20 @@ describe.skipIf(!HAS_CLAUDE)('serve integration', () => {
     expect(body.status).toBe('ok');
     expect(typeof body.sessions).toBe('number');
   });
+
+  test('directory traversal via percent-encoded `..` is rejected (issue #5)', async () => {
+    // Percent-encoded `..` is the dangerous case because `new URL(req.url).pathname`
+    // decodes `%2e%2e` to `..` and `path.join` would happily walk out of uiDir.
+    // Bun's HTTP layer normalizes some URLs (e.g. `/foo/../../app.ts` → `/app.ts`),
+    // so we only assert on cases where the path resolves to a file OUTSIDE uiDir.
+    const cases = [
+      `http://127.0.0.1:${PORT}/%2e%2e/package.json`,
+      `http://127.0.0.1:${PORT}/%2e%2e/%2e%2e/package.json`,
+      `http://127.0.0.1:${PORT}/%2e%2e/SECURITY.md`,
+    ];
+    for (const url of cases) {
+      const res = await fetch(url, { redirect: 'manual' });
+      expect([400, 404]).toContain(res.status);
+    }
+  });
 });

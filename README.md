@@ -227,7 +227,7 @@ need to learn per provider.
 | 2     | Permission model (PreToolUse + audit)    | ✓      |
 | 3     | UI polish + multi-session sidebar        | ✓      |
 | 4     | Hub mode (Ed25519 enrollment, sqlite)    | ✓      |
-| 5     | Mobile push (VAPID web push)             | ✓      |
+| 5     | Web Push (VAPID, browser notifications)  | ✓      |
 | 6     | Hardening (tests ≥80%, CI, cross-build)  | ✓      |
 
 See [`docs/roadmap.md`](./docs/roadmap.md) for details.

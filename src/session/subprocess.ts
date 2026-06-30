@@ -174,8 +174,10 @@ export class Subprocess {
       // already dead
     }
     const exited = proc.exited.then(() => true);
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
     const timed = new Promise<boolean>((resolve) => {
-      setTimeout(() => {
+      killTimer = setTimeout(() => {
+        killTimer = null;
         try {
           proc.kill('SIGKILL');
         } catch {
@@ -183,8 +185,11 @@ export class Subprocess {
         }
         resolve(true);
       }, 3000);
+      // Do not keep the event loop alive just for the SIGKILL fallback.
+      killTimer.unref?.();
     });
     await Promise.race([exited, timed]);
+    if (killTimer) clearTimeout(killTimer);
     await this.streamDone?.catch(() => {});
   }
 
