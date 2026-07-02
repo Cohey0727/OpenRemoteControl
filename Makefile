@@ -59,22 +59,16 @@ install: ## Install deps (bun install)
 	@echo "Done. Run \`make serve\` (or \`bun run serve\`) to launch open-rc."
 
 .PHONY: setup
-setup: ## Register attach-orc/open-rc on PATH + symlink the /attach-orc command
-	@test -f commands/attach-orc.md || (echo "commands/attach-orc.md missing"; exit 1)
-	@# 1) Symlink the slash command. Its body is the generic `attach-orc
-	@#    $$ARGUMENTS`, so the file is machine-independent — a symlink is
-	@#    safe and `git pull` propagates edits with no reinstall.
-	@mkdir -p $(HOME)/.claude/commands
-	@rm -f $(HOME)/.claude/commands/attach-orc.md
-	@ln -s $(ROOT_DIR)/commands/attach-orc.md $(HOME)/.claude/commands/attach-orc.md
-	@# 2) Install the launchers on PATH. Each is a thin wrapper around the
-	@#    current source, so `git pull` updates behavior with no rebuild.
-	@#    exec preserves cwd, so claude spawns in whatever dir you call it from.
+setup: ## Register the open-rc launcher on PATH
+	@# Install the launcher on PATH. It's a thin wrapper around the
+	@# current source, so `git pull` updates behavior with no rebuild.
 	@mkdir -p $(BIN_DIR)
-	@printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts attach-orc "$$@"' > $(BIN_DIR)/attach-orc
 	@printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc
-	@chmod +x $(BIN_DIR)/attach-orc $(BIN_DIR)/open-rc
-	@# Drop the superseded shell-init file if an older setup left one.
+	@chmod +x $(BIN_DIR)/open-rc
+	@# Upgraders: drop the removed attach-orc launcher, its slash-command
+	@# symlink, and the superseded shell-init file if an older setup left them.
+	@rm -f $(BIN_DIR)/attach-orc
+	@rm -f $(HOME)/.claude/commands/attach-orc.md
 	@rm -f $(SHELL_INIT_FILE)
 	@printf '%s\n' \
 	  '' \
@@ -86,16 +80,15 @@ setup: ## Register attach-orc/open-rc on PATH + symlink the /attach-orc command
 	  '  $(DIM)o p e n · r e m o t e · c o n t r o l$(OFF)' \
 	  '' \
 	  '   $(DIM)┌─────────┐         ┌─────────┐         ┌─────────┐$(OFF)' \
-	  '   $(DIM)│ browser │$(CYAN)◀──ws───▶$(DIM)│ $(AMBER)open·rc$(DIM) │$(CYAN)◀─agent─▶$(DIM)│ claude  │$(OFF)' \
+	  '   $(DIM)│ browser │$(CYAN)◀──ws───▶$(DIM)│ $(AMBER)open·rc$(DIM) │$(CYAN)◀─agent─▶$(DIM)│  bridge │$(OFF)' \
 	  '   $(DIM)└─────────┘         └─────────┘         └─────────┘$(OFF)' \
-	  '      $(DIM)phone / laptop        the relay         your claude$(OFF)' \
+	  '      $(DIM)phone / laptop        the relay        you own this$(OFF)' \
 	  '' \
-	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   $(HOME)/.claude/commands/attach-orc.md $(DIM)» symlink$(OFF)' \
-	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/{attach-orc, open-rc}' \
+	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  '' \
-	  ' $(BOLD)launch from any project$(OFF) $(DIM)— it drives THAT project'"'"'s claude$(OFF)' \
-	  '   $(CYAN)/attach-orc$(OFF)   $(DIM)in Claude Code · works in any repo$(OFF)' \
-	  '   $(CYAN)attach-orc$(OFF)    $(DIM)in any terminal$(OFF)' \
+	  ' $(BOLD)the server spawns nothing$(OFF) $(DIM)— you bring your own bridge to /agent$(OFF)' \
+	  '   $(CYAN)open-rc serve$(OFF)   $(DIM)the relay + SPA$(OFF)' \
+	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto a relayed session$(OFF)' \
 	  ''
 	@case ":$$PATH:" in \
 	  *":$(BIN_DIR):"*) ;; \
@@ -106,12 +99,12 @@ setup: ## Register attach-orc/open-rc on PATH + symlink the /attach-orc command
 	esac
 
 .PHONY: teardown
-teardown: ## Remove the /attach-orc command symlink + the PATH launchers
+teardown: ## Remove the PATH launcher (and any stale attach-orc leftovers)
+	@rm -f $(BIN_DIR)/open-rc
+	@rm -f $(BIN_DIR)/attach-orc
 	@rm -f $(HOME)/.claude/commands/attach-orc.md
-	@rm -f $(BIN_DIR)/attach-orc $(BIN_DIR)/open-rc
 	@rm -f $(SHELL_INIT_FILE)
-	@echo "Removed: $(HOME)/.claude/commands/attach-orc.md"
-	@echo "Removed: $(BIN_DIR)/attach-orc, $(BIN_DIR)/open-rc"
+	@echo "Removed: $(BIN_DIR)/open-rc (and stale attach-orc launcher/command if present)"
 	@echo "Note: any 'export PATH=$(BIN_DIR):...' or 'source $(SHELL_INIT_FILE)' lines"
 	@echo "      you added to ~/.zshrc / ~/.bashrc were NOT removed — clean those up by hand."
 
@@ -130,19 +123,9 @@ serve: ## Start the local WebSocket relay + SPA
 hub: ## Start the public hub relay (Phase 4)
 	bun run $(BIN) hub --host $(HOST) --port 7443
 
-.PHONY: attach-orc
-attach-orc: ## Attach a local claude subprocess to the running serve (Phase 7.5)
-	@echo "Note: 'attach-orc' is a CLI bridge — it spawns 'claude' locally and"
-	@echo "forwards its stream-json stdio to ws://$(HOST):$(PORT)/agent."
-	@echo "The 'serve' process itself does NOT spawn anything."
-	bun run $(BIN) attach-orc --server ws://$(HOST):$(PORT)/agent
-
-.PHONY: attach-tmux
-attach-tmux: ## Mirror an existing tmux claude into the running serve (TARGET=<pane>)
-	@echo "Note: 'attach-tmux' mirrors a claude you already started in tmux."
-	@echo "It spawns 'tmux' (never 'claude') and never kills the pane."
-	@echo "Pass TARGET=<pane> or omit to auto-detect the sole claude pane."
-	bun run $(BIN) attach-tmux --server ws://$(HOST):$(PORT)/agent $(if $(TARGET),--target $(TARGET),)
+.PHONY: tui
+tui: ## Terminal window onto a relayed session (spawn-free /ws client)
+	bun run $(BIN) tui --server ws://$(HOST):$(PORT)/ws
 
 .PHONY: dev
 dev: ## Start the server in --watch mode (auto-restart on file change)

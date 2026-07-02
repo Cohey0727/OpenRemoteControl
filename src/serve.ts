@@ -134,7 +134,6 @@ export async function serve(opts: ServeOptions): Promise<{
         connectedAt: now,
         ws,
         history: [],
-        latestScreen: null,
         info() {
           return {
             clientId: this.clientId,
@@ -252,29 +251,12 @@ export async function serve(opts: ServeOptions): Promise<{
         conn.history.splice(0, conn.history.length - MAX_HISTORY);
       }
     },
-    recordScreen(clientId, text) {
-      const conn = clients.get(clientId);
-      if (!conn) return;
-      // Only the newest screen is kept — a single string, not appended
-      // to history, so a fast-polling tmux bridge can't grow memory.
-      conn.latestScreen = text;
-    },
     replayHistory(clientId, browser) {
       const conn = clients.get(clientId);
       if (!conn) return;
       for (const frame of conn.history) {
         try {
           browser.send(JSON.stringify(frame));
-        } catch {
-          // ignore
-        }
-      }
-      // After the conversation history, replay the latest terminal
-      // screen (if this is a tmux-mirror client) so a late joiner sees
-      // the current pane even when it's momentarily static.
-      if (conn.latestScreen !== null) {
-        try {
-          browser.send(JSON.stringify({ type: 'screen', clientId, text: conn.latestScreen }));
         } catch {
           // ignore
         }

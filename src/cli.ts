@@ -3,36 +3,22 @@
  * `open-rc` CLI entry point.
  *
  * Commands:
- *   serve         Local WebSocket relay + SPA (default if no command given).
- *   hub           Public relay that brokers many `serve` instances to many
- *                 browsers.
- *   attach-orc    Spawn a local `claude` and bridge it to the running
- *                 `serve` via `/agent`, so the session shows up in the
- *                 browser and can be driven from there. Point it at a
- *                 remote serve with `ORC_BASE_URL`. `orc` = "open remote
- *                 control".
- *   tui           Terminal front-end for a relayed session. A plain
- *                 `/ws` client (like the browser) — attaches to a
- *                 clientId and shares that ONE `claude` with the
- *                 browser: prompts and stream flow both ways.
- *   attach-tmux   Mirror an EXISTING interactive `claude` running in a
- *                 tmux pane into the browser: polls `capture-pane` for
- *                 output, delivers browser prompts with `send-keys`.
- *                 Spawns no `claude` and never kills the pane.
+ *   serve   Local WebSocket relay + SPA (default if no command given).
+ *   hub     Public relay that brokers many `serve` instances to many
+ *           browsers.
+ *   tui     Terminal front-end for a relayed session. A plain `/ws`
+ *           client (like the browser) — attaches to a clientId and
+ *           renders/sends frames.
  *
  * Spawn discipline:
- *   - `serve`, `hub`, and `tui` NEVER spawn anything. `serve`/`hub` are
- *     byte-pass-through relays; `tui` is a WebSocket client. Their
- *     process trees contain only themselves.
- *   - `attach-orc` is the ONE place that calls `Bun.spawn` for `claude`.
- *     `attach-tmux` calls `Bun.spawn` too, but only for `tmux` (never
- *     `claude`): it drives a `claude` the user already started. Both
- *     run as separate client-side processes; the server stays
- *     spawn-free and touches no terminal.
+ *   NONE of these commands spawn anything. `serve`/`hub` are
+ *   byte-pass-through relays; `tui` is a WebSocket client. The project
+ *   contains no `Bun.spawn`, no `child_process`, no `fork`, no `exec`,
+ *   no PTY, no tmux. The user runs `claude` themselves and brings their
+ *   own bridge that pipes its stream-json to the `/agent` WebSocket.
+ *   open-rc never spawns, manages, signals, or mirrors `claude`.
  */
 
-import { parseAttachFlags, runAttach } from './cli/attach-orc.ts';
-import { parseTmuxFlags, runAttachTmux } from './cli/attach-tmux.ts';
 import { parseFlags } from './cli/flags.ts';
 import { parseTuiFlags, runTui } from './cli/tui.ts';
 import { HubServer } from './hub/server.ts';
@@ -99,27 +85,11 @@ if (command === 'serve' || command === '') {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
-} else if (command === 'attach-orc') {
-  const attachFlags = parseAttachFlags(process.argv.slice(3));
-  console.log(`[attach-orc] server:   ${attachFlags.server}`);
-  console.log(`[attach-orc] label:    ${attachFlags.label}`);
-  console.log(`[attach-orc] cwd:      ${attachFlags.cwd}`);
-  if (attachFlags.clientId) {
-    console.log(`[attach-orc] clientId: ${attachFlags.clientId}`);
-  }
-  await runAttach(attachFlags);
 } else if (command === 'tui') {
   const tuiFlags = parseTuiFlags(process.argv.slice(3));
   await runTui(tuiFlags);
-} else if (command === 'attach-tmux') {
-  const tmuxFlags = parseTmuxFlags(process.argv.slice(3));
-  console.log(`[attach-tmux] server:   ${tmuxFlags.server}`);
-  console.log(`[attach-tmux] label:    ${tmuxFlags.label}`);
-  console.log(`[attach-tmux] target:   ${tmuxFlags.target ?? '(auto-detect)'}`);
-  console.log(`[attach-tmux] interval: ${tmuxFlags.intervalMs}ms`);
-  await runAttachTmux(tmuxFlags);
 } else {
   console.error(`unknown command: ${command}`);
-  console.error('available commands: serve, hub, attach-orc, tui, attach-tmux');
+  console.error('available commands: serve, hub, tui');
   process.exit(2);
 }

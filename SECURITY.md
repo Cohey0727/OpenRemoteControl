@@ -67,17 +67,16 @@ forwards user prompts and tool-call requests to Claude Code.
   it from the SQLite store (`hub.db`), but no UI ships for this in
   v0.1.
 - **No spawn. No subprocess management. No process discovery.**
-  `open-rc serve` does not call `Bun.spawn`, `fork`, `exec`, or any
-  equivalent. It does not walk `ps`, `lsof`, `/proc`, or any process
-  table. It does not signal any process (SIGTERM, SIGKILL, SIGINT,
-  SIGHUP) under any circumstance. The third CLI command
-  `open-rc attach-orc` (a separate process the user runs in their
-  terminal) is the only place in the project that calls `Bun.spawn`
-  for `claude`. The `/attach-orc` Claude Code slash command
-  (`commands/attach-orc.md`, symlinked into `~/.claude/commands/`
-  by `make setup`) is a thin wrapper that asks Claude Code to run
-  the existing CLI process — it does not introduce any new spawn
-  point. `open-rc hub` follows the same no-spawn rule as `serve`.
+  NOTHING in open-rc calls `Bun.spawn`, `fork`, `exec`, or any
+  equivalent. Nothing walks `ps`, `lsof`, `/proc`, or any process
+  table. Nothing signals any process (SIGTERM, SIGKILL, SIGINT,
+  SIGHUP). No PTY, no tmux. The entire CLI is `serve`, `hub`, and
+  `tui`, and all three spawn nothing —
+  `grep -rE 'Bun\.spawn|child_process|posix_spawn|fork|exec' src/` is
+  empty. (Spawning helpers `attach-orc` and `attach-tmux` existed
+  briefly and were removed on 2026-07-02; a spawner may return only as
+  a deliberate future feature. No `Bun.spawn` remains today.)
+  `open-rc hub` follows the same no-spawn rule as `serve`.
   The user runs `claude` themselves; whatever they do with it is
   their business. A `claude` running in another terminal is
   unaffected by anything `open-rc serve` does — open-rc doesn't

@@ -62,14 +62,6 @@ export interface BridgeConn {
    * disconnects and never written to disk.
    */
   history: RelayedMessage[];
-  /**
-   * The most recent terminal screen (from an `attach-tmux` bridge), or
-   * null for a normal conversation bridge. Kept OUTSIDE `history` (only
-   * the latest screen matters, and screens are large) but replayed on
-   * attach so a late joiner sees the current terminal even when the
-   * mirrored pane is momentarily static and sends no new `screen` frame.
-   */
-  latestScreen: string | null;
   info(): ClientInfo;
 }
 
@@ -175,31 +167,17 @@ export const TextMessage = WithClientId.extend({
 export type TextMessage = z.infer<typeof TextMessage>;
 
 /**
- * A streaming fragment of the assistant's in-progress text (from
- * `claude --include-partial-messages`). Relayed live to attached
- * clients but NEVER recorded to history: the final `text` frame
- * carries the complete content, so replaying deltas would render the
- * reply twice.
+ * A streaming fragment of the assistant's in-progress reply. A bridge
+ * that has a token stream can send these so the browser renders the
+ * reply as it generates. Relayed live to attached clients but NEVER
+ * recorded to history: the final `text` frame carries the complete
+ * content, so replaying deltas would render the reply twice.
  */
 export const TextDeltaMessage = WithClientId.extend({
   type: z.literal('text_delta'),
   text: z.string(),
 });
 export type TextDeltaMessage = z.infer<typeof TextDeltaMessage>;
-
-/**
- * A full snapshot of a terminal screen (from `tmux capture-pane`),
- * used by the `attach-tmux` bridge to mirror an existing interactive
- * `claude` running in a tmux pane. Like `text_delta` it is live-only:
- * only the latest screen matters, so it is relayed to attached clients
- * but never recorded to the replay buffer (a stale screen would flash
- * on attach and then be overwritten by the next poll anyway).
- */
-export const ScreenMessage = WithClientId.extend({
-  type: z.literal('screen'),
-  text: z.string(),
-});
-export type ScreenMessage = z.infer<typeof ScreenMessage>;
 
 export const ThinkingMessage = WithClientId.extend({
   type: z.literal('thinking'),
@@ -255,7 +233,6 @@ export const RelayedMessage = z.discriminatedUnion('type', [
   PermissionRequestMessage,
   DoneMessage,
   ErrorMessage,
-  ScreenMessage,
 ]);
 export type RelayedMessage = z.infer<typeof RelayedMessage>;
 
@@ -274,7 +251,6 @@ export const ServerBrowserMessage = z.discriminatedUnion('type', [
   PermissionRequestMessage,
   DoneMessage,
   ErrorMessage,
-  ScreenMessage,
 ]);
 export type ServerBrowserMessage = z.infer<typeof ServerBrowserMessage>;
 
@@ -308,7 +284,6 @@ export type StatusUpdate = z.infer<typeof StatusUpdate>;
 export const BridgeFrame = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('text_delta'), text: z.string() }),
-  z.object({ type: z.literal('screen'), text: z.string() }),
   z.object({ type: z.literal('thinking'), text: z.string() }),
   z.object({
     type: z.literal('tool_use'),

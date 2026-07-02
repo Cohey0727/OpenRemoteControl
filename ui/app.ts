@@ -367,10 +367,6 @@ const [promptsByClient, setPromptsByClient] = signal<Record<string, PermissionPr
 // cleared when the final `text` frame (or done/error) arrives; never
 // part of messagesByClient, never replayed.
 const [streamByClient, setStreamByClient] = signal<Record<string, string>>({});
-// Latest terminal screen per client (screen frames from attach-tmux).
-// A client with a screen renders as a live terminal mirror instead of
-// the conversation-card transcript. Live-only, never replayed.
-const [screenByClient, setScreenByClient] = signal<Record<string, string>>({});
 const [mobileView, setMobileView] = signal<'sidebar' | 'chat'>('sidebar');
 const [mobile, setMobile] = signal(isMobile());
 // Ticks every 15 s so relative "last activity" timestamps advance on
@@ -423,11 +419,6 @@ function appendStreamFor(clientId: string, chunk: string): void {
 
 function clearStreamFor(clientId: string): void {
   setStreamByClient((prev) => (clientId in prev ? dropKey(prev, clientId) : prev));
-}
-
-function setScreenFor(clientId: string, text: string): void {
-  setScreenByClient((prev) => ({ ...prev, [clientId]: text }));
-  scrollChatToBottom();
 }
 
 function send(msg: BrowserClientMessage): void {
@@ -574,7 +565,6 @@ function forgetClient(clientId: string): void {
   setPromptsByClient((prev) => dropKey(prev, clientId));
   setBusy((prev) => dropKey(prev, clientId));
   setStreamByClient((prev) => dropKey(prev, clientId));
-  setScreenByClient((prev) => dropKey(prev, clientId));
 }
 
 function retainClients(live: Set<string>): void {
@@ -582,7 +572,6 @@ function retainClients(live: Set<string>): void {
   setPromptsByClient((prev) => retainKeys(prev, live));
   setBusy((prev) => retainKeys(prev, live));
   setStreamByClient((prev) => retainKeys(prev, live));
-  setScreenByClient((prev) => retainKeys(prev, live));
 }
 
 function handleServer(msg: ServerBrowserMessage): void {
@@ -638,11 +627,6 @@ function handleServer(msg: ServerBrowserMessage): void {
       break;
     case 'user':
       appendFor(msg.clientId, { kind: 'user', text: msg.text });
-      break;
-    case 'screen':
-      // A terminal-mirror snapshot (attach-tmux). Replaces the whole
-      // rendered screen; the client shows as a terminal, not cards.
-      setScreenFor(msg.clientId, msg.text);
       break;
     case 'text':
       // The final complete text supersedes any streamed partial.
@@ -1017,16 +1001,6 @@ function buildApp(): HTMLElement {
       renderedCount = 0;
       return;
     }
-    // Terminal-mirror mode (attach-tmux): a screen snapshot replaces the
-    // whole card transcript with a single <pre> of the latest tmux pane.
-    // Sentinel renderedCid so switching back to a card client rebuilds.
-    const screen = screenByClient()[cid];
-    if (screen !== undefined) {
-      setChildren(chatInner, [h('pre', { class: 'term-mirror' }, screen)]);
-      renderedCid = `screen:${cid}`;
-      renderedCount = -1;
-      return;
-    }
     const byClient = messagesByClient();
     const items = byClient[cid] ?? [];
     const clientChanged = cid !== renderedCid;
@@ -1134,13 +1108,13 @@ function buildApp(): HTMLElement {
       h(
         'p',
         {},
-        'Bridge a running claude to this relay and it appears in the sidebar, ready to drive.',
+        'Point a bridge at this relay — pipe a running claude’s stream-json to the /agent WebSocket — and the session appears in the sidebar, ready to drive.',
       ),
       h(
         'div',
         { class: 'empty-cmds' },
-        h('div', { class: 'empty-cmd' }, h('code', {}, 'attach-orc'), 'in any terminal'),
-        h('div', { class: 'empty-cmd' }, h('code', {}, '/attach-orc'), 'inside Claude Code'),
+        h('div', { class: 'empty-cmd' }, h('code', {}, '/ws'), 'browsers connect here'),
+        h('div', { class: 'empty-cmd' }, h('code', {}, '/agent'), 'your bridge connects here'),
       ),
     );
 

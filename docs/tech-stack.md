@@ -317,45 +317,35 @@ configs to maintain), `dprint` (good, less ecosystem).
 
 ## Process management
 
-`open-rc serve` does not manage processes. It does not spawn, fork,
-exec, attach, signal, or introspect any other process. There is no
-`Bun.spawn`, no `child_process`, no PTY. The server's process table
-is whatever Bun started when the user ran `open-rc serve` — that's
-it.
+**Nothing in open-rc manages processes.** No command spawns, forks,
+execs, attaches, signals, or introspects any other process. There is
+no `Bun.spawn`, no `child_process`, no PTY, no tmux anywhere in the
+project — `grep -rE 'Bun\.spawn|child_process|posix_spawn|fork|exec'
+src/` is empty. `serve`, `hub`, and `tui` are the whole CLI, and each
+process's tree contains only itself.
 
-`open-rc hub` follows the same rule.
+If the user wants a `claude` running, they run it themselves. If they
+want it bridged to open-rc, they write their own bridge that pipes
+`claude`'s stream-json to `/agent` — see `docs/architecture.md` §3.3.
+open-rc ships no bridge.
 
-`open-rc attach-orc` is the **only** command that calls `Bun.spawn`.
-It is a separate CLI process the user runs in their terminal; it
-owns the `claude` subprocess (lifecycle, signals, stdio) and
-bridges its stream-json stdio to `/agent`. The server remains
-spawn-free. Removing `attach-orc` does not change the server's
-no-spawn property; removing `serve` does. `attach-orc` bridges the
-session itself — no `--model`/`--claude` knobs. It targets a remote
-serve via `ORC_BASE_URL` (http→ws, https→wss, `/agent` appended).
+> **Spawning is out of scope, not impossible in principle.** A future
+> command that spawns `claude` (or spawns `tmux`/a PTY to mirror a
+> terminal) could be added if a real need appears. Two such helpers —
+> `attach-orc` (spawned `claude`) and `attach-tmux` (spawned `tmux`) —
+> were built and then **removed on 2026-07-02**: sharing an existing
+> session is the goal, and neither is needed for that. Re-adding a
+> spawner is a deliberate decision, never a convenience reach.
 
-If the user wants a `claude` running, they run it themselves. If the
-user wants it bridged to open-rc, they can either run
-`open-rc attach-orc` or write their own bridge. We do ship a bridge
-(`open-rc attach-orc`) — see `docs/architecture.md` §3.4.
+### Launcher bootstrap
 
-### Slash-command bootstrap
-
-`make setup` registers two launcher scripts — `attach-orc` and
-`open-rc` — in `~/.local/bin` (override with `BIN_DIR=`). Each is a
-two-line wrapper (`exec bun run <checkout>/src/cli.ts … "$@"`), so the
-absolute-path anchor lives in the launcher and a `git pull` updates
-behavior with no rebuild. The `/attach-orc` Claude Code slash command
-(`commands/attach-orc.md`, symlinked into `~/.claude/commands/`) has
-the generic body `attach-orc $ARGUMENTS`; because that is
-machine-independent, a **symlink** is safe and lets a `git pull`
-propagate edits with no reinstall. The slash command runs in a
-non-interactive shell, so it depends on the install dir being on PATH
-— `make setup` prints the one-line PATH fix when it isn't. `claude`
-still spawns in the caller's cwd, so `/attach-orc` drives whichever
-project you run it from. (Do not `>`-redirect into the command
-symlink — that truncates the repo source through the link; the
-launcher, not the command file, carries the path.)
+`make setup` registers one launcher script — `open-rc` — in
+`~/.local/bin` (override with `BIN_DIR=`). It is a two-line wrapper
+(`exec bun run <checkout>/src/cli.ts … "$@"`), so the absolute-path
+anchor lives in the launcher and a `git pull` updates behavior with no
+rebuild. `make teardown` removes it (and cleans up the removed
+`attach-orc` launcher / `/attach-orc` command symlink if an older
+setup left them behind).
 
 ---
 

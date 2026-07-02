@@ -3,10 +3,11 @@
  * is relaying.
  *
  * It is a plain `/ws` client, exactly like the browser SPA: it does NOT
- * spawn or own `claude`. `attach-orc` owns the one `claude`; the browser
- * and this `tui` are both clients of `open-rc serve`, attached to the
- * same clientId — so they share ONE live session. A prompt typed here
- * shows up in the browser and vice-versa, and both see the same stream.
+ * spawn or own `claude`. A user-owned bridge owns the `claude` (piping
+ * its stream-json to `/agent`); the browser and this `tui` are both
+ * clients of `open-rc serve`, attached to the same clientId — so they
+ * share ONE live session. A prompt typed here shows up in the browser
+ * and vice-versa, and both see the same stream.
  *
  * Flags: --server (ws URL of serve's /ws, default from ORC_BASE_URL),
  * --client-id (which session to attach to; auto-picks the only/most
@@ -109,9 +110,7 @@ export async function runTui(flags: TuiFlags): Promise<void> {
       return;
     }
     if (pool.length === 0) {
-      render(
-        `${C.dim}no sessions connected yet — run \`attach-orc\` somewhere, then /clients${C.off}`,
-      );
+      render(`${C.dim}no sessions connected yet — point a bridge at /agent, then /clients${C.off}`);
       return;
     }
     const only = pool.length === 1 ? pool[0] : undefined;

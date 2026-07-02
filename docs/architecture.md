@@ -189,10 +189,11 @@ Putting spawn outside open-rc is deliberate:
   beyond the live client map.
 - **The server's surface doesn't grow.** The server ships exactly
   `serve` and `hub` and stays a pure relay no matter what bridge shape
-  the user invents. The client-side helpers (`attach-orc`,
-  `attach-tmux`, `tui`) are separate processes that speak the same WS
-  protocols; adding them never touches the server or its no-spawn
-  property.
+  the user invents. The only client-side helper shipped is `tui`, a
+  spawn-free `/ws` client. (Spawning helpers `attach-orc` and
+  `attach-tmux` were built and then removed on 2026-07-02 — spawning is
+  out of scope; a spawner may return as a deliberate future feature.
+  The user brings their own bridge to `/agent`.)
 
 ---
 
@@ -482,7 +483,7 @@ requires Anthropic OAuth which we explicitly avoid.
 **Conclusion:** we don't try to redirect the bridge. The user runs
 `claude` in `--print` stream-json mode.
 
-### 8.2 `--bare` mode (evaluated, then rejected for attach-orc)
+### 8.2 `--bare` mode (evaluated, then rejected — note for any future spawner)
 
 Discovered from binary strings + verified empirically:
 
@@ -495,9 +496,9 @@ Discovered from binary strings + verified empirically:
 
 Attractive at first glance (no hook/plugin interference), but the
 auth clause is disqualifying in practice: on a machine that logs in
-via claude.ai OAuth — no `ANTHROPIC_API_KEY` exported — every bridged
-prompt returns "Not logged in · Please run /login" (verified
-empirically, 2026-07-02). `attach-orc` therefore spawns plain
+via claude.ai OAuth — no `ANTHROPIC_API_KEY` exported — every prompt
+returns "Not logged in · Please run /login" (verified empirically,
+2026-07-02). So a bridge (or any future spawner) should run plain
 `--print --input-format stream-json --output-format stream-json
 --verbose`: the same public wire format, with auth — and hooks,
 settings, CLAUDE.md — resolved exactly like the user's own
@@ -508,7 +509,7 @@ settings, CLAUDE.md — resolved exactly like the user's own
 
 Verified by piping real prompts into `claude --print --output-format
 stream-json`. All event types and content block shapes enumerated in
-§4.1. With `--include-partial-messages` (which attach-orc passes), the
+§4.1. With `--include-partial-messages` (which a bridge can pass), the
 stream additionally carries `stream_event` wrappers around raw API
 events; `content_block_delta` / `text_delta` fragments are translated
 into `text_delta` frames and relayed live — but never recorded to the
@@ -595,9 +596,7 @@ wait for them to re-register.
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
 | **`open-rc serve`**  | The pure WS relay. The only thing open-rc ships (besides `hub`).   |
 | **Hub**              | `open-rc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. `attach-orc` is the reference one. |
-| **`attach-tmux`**    | Client-side command mirroring an EXISTING tmux `claude`: polls `capture-pane` → `screen` frames, sends prompts via `send-keys`. Spawns only `tmux`; never kills the pane. |
-| **`screen` frame**   | A terminal-screen snapshot (from `attach-tmux`). Relayed live, kept as the client's one `latestScreen` (not in history), replayed on attach. |
+| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. open-rc ships none — you write your own (removed helpers `attach-orc`/`attach-tmux` spawned, which is out of scope). |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |

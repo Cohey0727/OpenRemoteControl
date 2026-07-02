@@ -57,107 +57,54 @@ relay — it never spawns anything.
 
 ## Drive a `claude` session from your browser
 
-Run `make setup` once. You then start a bridge **from any project**
-and it drives *that* project's `claude` — the command is anchored to
-the open-rc checkout, but `claude` spawns in whatever directory you
-invoke it from.
+open-rc **shares an already-running `claude` — it never starts one.**
+You run `claude` yourself in stream-json mode and pipe its output to
+the relay's `/agent` WebSocket; the browser attaches and drives it.
+
+Run `make setup` once to put the `open-rc` launcher on your PATH, then
+start the relay:
 
 ```bash
-make setup                                             # one-time
+make setup          # writes ~/.local/bin/open-rc (override BIN_DIR)
+open-rc serve       # → http://127.0.0.1:7322
 ```
 
-`make setup` does two things:
+If `~/.local/bin` isn't on your PATH, `make setup` prints the one-line
+fix. `make teardown` removes the launcher again.
 
-1. **Registers `attach-orc` and `open-rc` on your PATH** (as launcher
-   scripts in `~/.local/bin`, overridable with `make setup
-   BIN_DIR=/usr/local/bin`). Each launcher just runs this checkout's
-   source, so a `git pull` updates behavior with no reinstall.
-2. **Symlinks the `/attach-orc` slash command** into
-   `~/.claude/commands/`. Its body is the generic `attach-orc
-   $ARGUMENTS`, so the file is machine-independent — the symlink means
-   `git pull` propagates any edit with no reinstall — and it resolves
-   through the PATH launcher from (1).
+### Bring your own bridge
 
-Then launch the bridge either way — both work from any project:
+open-rc does not ship a bridge, and the server never spawns anything —
+the moment it did, it would be tempted to spawn and manage `claude`,
+which is out of scope. You wire your own: run `claude` in stream-json
+mode and forward its stdio to `ws://127.0.0.1:7322/agent` with a small
+script (a few lines of Bun/Node, or any framed-WebSocket tool). The
+bridge:
 
-```text
-/attach-orc                 # inside Claude Code, in any repo
-/attach-orc --label macbook
+1. opens `/agent` and sends a `register { label, cwd }` frame;
+2. relays each stream-json event from `claude`'s stdout as a frame
+   (`text`, `thinking`, `tool_use`, `tool_result`, `done`, …);
+3. writes browser `prompt` frames (and `permission_response`) back to
+   `claude`'s stdin.
 
-attach-orc                  # in any terminal
-```
+See [`docs/architecture.md`](./docs/architecture.md) §4 for the exact
+frame shapes. Run `claude` with
+`--print --input-format stream-json --output-format stream-json --verbose`.
 
-If `~/.local/bin` isn't already on your PATH, `make setup` prints the
-one-line fix; add it and restart your shell (and Claude Code) so both
-the terminal `attach-orc` and the `/attach-orc` slash command — which
-runs in a non-interactive shell and inherits that PATH — can find it:
-
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # or ~/.bashrc
-```
-
-`attach-orc` is a long-lived bridge (it owns the spawned `claude`
-until you stop it). The `/attach-orc` slash command therefore runs it
-**in the background**, so the Claude Code session you launched it from
-stays free — drive the bridged claude from the browser, and stop it
-by ending the background task (or `pkill -f 'cli.ts attach-orc'`). In
-a terminal, `attach-orc` runs in the foreground and blocks until you
-Ctrl+C (append `&` yourself to detach). The `/attach-orc` command
-makes one LLM round-trip (inherent to Claude Code slash commands); the
-terminal `attach-orc` has none. Run `make teardown` to remove the
-command symlink and the launchers.
-
-`attach-orc` fails fast when it can't reach the relay: if the first
-registration doesn't complete within 10 seconds (serve not running,
-`ORC_BASE_URL` pointing nowhere, clientId already in use), it prints
-the reason and exits nonzero instead of retrying forever. Once
-registered, it reconnects with a short backoff for as long as it runs,
-so restarting `serve` doesn't kill the bridge.
-
----
-
-Both paths spawn the same `claude --print --input-format
-stream-json --output-format stream-json` subprocess and bridge its
-stdio to `ws://127.0.0.1:7322/agent`. The session appears in the
-sidebar; type into the composer; the prompt lands on `claude`'s
-stdin. (`orc` = "open remote control".) Not `--bare`: bare mode
-authenticates only via `ANTHROPIC_API_KEY`, so an OAuth-login machine
-would get "Not logged in" for every prompt — `--print` resolves auth
-exactly like your own `claude -p`.
-
-`attach-orc` is a separate process the user runs in their terminal.
-It is the only place in the project that calls `Bun.spawn` for
-`claude`. The server remains spawn-free.
-
-There are no `--model` or `--claude` knobs. `attach-orc` bridges the
-`claude` session itself, exactly as `claude` launches it. If you want
-a different model or provider, configure that where you already do it
-(`ANTHROPIC_BASE_URL`, your `claude` settings) — `attach-orc` doesn't
-duplicate it.
-
-Common flags (work whichever way you launch):
-
-```bash
-# Point at a non-default server
-attach-orc --server ws://192.168.1.10:7322/agent
-
-# Customize label / cwd / explicit clientId
-attach-orc --label macbook-pro --cwd ~/code/myproj --client-id work
-```
+> Not `--bare`: bare mode authenticates only via `ANTHROPIC_API_KEY`,
+> so an OAuth-login machine gets "Not logged in" for every prompt.
+> `--print` resolves auth exactly like your own `claude -p`.
 
 ### Attach to a remote serve (VPN / ECS / anywhere)
 
 `open-rc serve` can run wherever you like — a VPS, an ECS task, a box
-on your VPN. Point `attach-orc` at it by exporting `ORC_BASE_URL`;
-the `/agent` WebSocket URL is derived from it (`http`→`ws`,
-`https`→`wss`, `/agent` appended if absent):
+on your VPN. Point your bridge and `open-rc tui` at it by exporting
+`ORC_BASE_URL`; the `/agent` and `/ws` URLs are derived from it
+(`http`→`ws`, `https`→`wss`, path appended if absent):
 
 ```bash
 export ORC_BASE_URL=https://orc.internal.example:7322
-attach-orc                    # → wss://orc.internal.example:7322/agent
-
-# equivalent, explicit:
-attach-orc --server wss://orc.internal.example:7322/agent
+open-rc tui                    # → wss://orc.internal.example:7322/ws
 ```
 
 `--server` always wins over `ORC_BASE_URL`.
@@ -167,7 +114,7 @@ attach-orc --server wss://orc.internal.example:7322/agent
 `open-rc tui` is a terminal front-end for a session `serve` is already
 relaying. It's a plain `/ws` client — the same protocol the browser
 speaks — so the browser and any number of `tui` windows attach to the
-**same** `claude` (the one `attach-orc` owns) and share one live
+**same** session (the one your bridge feeds) and share one live
 conversation: a prompt from either side is echoed to all, and the
 stream fans out to all.
 
@@ -179,43 +126,14 @@ open-rc tui --server ws://192.168.1.10:7322/ws   # or a remote serve
 
 Inside it, type to send a prompt; `/allow` or `/deny` answer a
 permission request; `/clients`, `/attach <id>`, `/quit`, `/help` do the
-obvious things. (Under the hood: `attach-orc` owns the single `claude`;
-`tui` and the browser are both just clients of `serve`.)
-
-### Mirror an existing terminal `claude` (attach-tmux)
-
-`attach-orc` and `tui` share a *fresh headless* `claude` that
-`attach-orc` spawns. If instead you want to drive the **interactive
-`claude` you already started in a terminal** — from the browser, with
-its live TUI mirrored — run that `claude` inside tmux and bridge the
-pane:
-
-```bash
-# 1. run claude inside tmux (any session/window name)
-tmux new -s work
-#    …then inside: claude
-
-# 2. from anywhere, bridge that pane into open-rc
-open-rc attach-tmux --target work
-#    omit --target to auto-detect the sole claude pane
-```
-
-The browser then shows the pane's live screen (polled via
-`tmux capture-pane`) and your browser prompts are typed into it with
-`tmux send-keys` — so the conversation continues in your real terminal
-session, visible in both places. `attach-tmux` spawns no `claude` and
-**never kills the pane**: quitting the bridge (Ctrl-C) leaves your
-terminal `claude` running untouched. Permission dialogs and slash
-commands work by sending the key/text as a normal prompt (e.g. send
-`1` to pick the first option), since the mirror forwards keystrokes
-verbatim. Wide TUIs scroll horizontally in the browser; this is a
-screen mirror, not a reflowing chat transcript.
+obvious things. `tui` spawns nothing and owns no `claude` — it and the
+browser are both just clients of `serve`.
 
 ### Streaming, loading state, and turn timestamps
 
-Replies render as they are generated: `attach-orc` passes
-`--include-partial-messages` to `claude`, translates the resulting
-`stream_event` token deltas into `text_delta` frames, and the browser
+Replies can render as they are generated: if your bridge sends
+`text_delta` frames (e.g. translated from `claude
+--include-partial-messages`'s `stream_event` token deltas), the browser
 paints them into a live bubble with a blinking caret. Before the first
 token arrives, a typing indicator (three pulsing dots) shows that the
 session is busy. Deltas are live-only — the final `text` frame
@@ -237,18 +155,16 @@ connected and is never written to disk (restart `serve` and it rebuilds
 as new frames arrive). It is the live stream `serve` is already
 relaying — not a read of `claude`'s transcript files.
 
-### Bring-your-own bridge
+### The bridge protocol
 
-You can also write your own bridge to `/agent` (e.g. via
-`websocat` or a custom script) and skip `open-rc attach-orc`
-entirely. The wire protocol is just framed JSON: `register`,
-`text`, `thinking`, `tool_use`, `tool_result`,
-`permission_request`, `done`, `error`. See
-`src/session/ws-protocol.ts`.
+Your bridge to `/agent` speaks framed JSON: a `register` frame first,
+then `text`, `thinking`, `tool_use`, `tool_result`,
+`permission_request`, `done`, `error` (and optionally `text_delta` for
+streaming). See `src/session/ws-protocol.ts` for the zod schemas.
 
-The browser never creates clients. The browser shows whatever is
+The browser never creates clients — it shows whatever bridges are
 currently attached. If you want another "session" in the sidebar,
-run another `open-rc attach-orc` from another terminal.
+connect another bridge from another terminal.
 
 ### Multi-machine setup (LAN or VPS)
 
@@ -258,14 +174,13 @@ open-rc serve --host 0.0.0.0 --port 7322
 
 # On the host that has `claude` installed
 export ORC_BASE_URL=http://server.lan:7322
-attach-orc --label build-box
+# …run your bridge; it dials $ORC_BASE_URL/agent
 ```
 
 The server is a dumb relay, so any host with Bun can run it, anywhere
-you can reach over the network. `attach-orc` runs next to `claude`
-and dials the remote serve's `/agent` endpoint derived from
-`ORC_BASE_URL`. The session shows up in the browser attached to that
-serve.
+you can reach over the network. Your bridge runs next to `claude` and
+dials the remote serve's `/agent` endpoint derived from `ORC_BASE_URL`.
+The session shows up in the browser attached to that serve.
 
 ### Hub mode (multi-device, multi-user)
 
@@ -310,38 +225,20 @@ open-rc hub
   --dbPath           <p>   SQLite path (default $XDG_DATA_HOME/open-rc/hub.db)
   --autoApprove            Skip the browser-pair step (insecure; testing only)
 
-open-rc attach-orc
-  --server           <u>   /agent WebSocket URL (default from ORC_BASE_URL,
-                           else ws://127.0.0.1:7322/agent)
-  --label            <s>   Sidebar label (default $USER@hostname)
-  --cwd              <p>   Working directory reported to the server
-  --client-id        <s>   Explicit clientId (default random UUID)
-  # env: ORC_BASE_URL   base URL of a remote serve; /agent is derived from it
-
 open-rc tui
   --server           <u>   /ws WebSocket URL (default from ORC_BASE_URL,
                            else ws://127.0.0.1:7322/ws)
   --client-id        <s>   Session to attach to (auto-picks when omitted)
-
-open-rc attach-tmux
-  --server           <u>   /agent WebSocket URL (default from ORC_BASE_URL,
-                           else ws://127.0.0.1:7322/agent)
-  --target           <t>   tmux target pane (e.g. mysession, sess:1.0, %3);
-                           auto-detects the sole claude pane when omitted
-  --label            <s>   Sidebar label (default tmux:<target>@hostname)
-  --client-id        <s>   Explicit clientId (default random UUID)
-  --interval         <ms>  capture-pane poll interval (default 500, floor 100)
-  # env: ORC_TMUX_BIN   override the tmux binary (tests only)
+  # env: ORC_BASE_URL   base URL of a remote serve; /ws is derived from it
 ```
 
-That is the entire CLI surface. There is no `open-rc client`. There
-is no `open-rc spawn`.
+That is the entire CLI surface. There is no `open-rc client`, no
+`open-rc spawn`, no `attach-orc`, no `attach-tmux`.
 
-> Note: five commands total — `serve` and `hub` (spawn-free relays),
-> `attach-orc` (the only command that `Bun.spawn`s `claude`), `tui` (a
-> spawn-free `/ws` client that shares a session with the browser), and
-> `attach-tmux` (mirrors an existing tmux `claude`; `Bun.spawn`s only
-> `tmux`, never `claude`, and never kills the pane).
+> Note: three commands total — `serve` and `hub` (spawn-free relays)
+> and `tui` (a spawn-free `/ws` client that shares a relayed session
+> with the browser). Nothing in the project spawns a process; you bring
+> your own bridge to `/agent`.
 
 ---
 
@@ -397,11 +294,9 @@ sidebar repopulates.
 
 ```
 src/
-├── cli.ts                       # arg parsing, dispatch (serve, hub, attach-orc, tui, attach-tmux)
+├── cli.ts                       # arg parsing, command dispatch (serve, hub, tui)
 ├── cli/
 │   ├── flags.ts                 # shared --k=v / kebab→camel flag parser
-│   ├── attach-orc.ts            # spawns claude, bridges stream-json ↔ /agent (only claude spawn)
-│   ├── attach-tmux.ts           # mirrors an existing tmux claude (capture-pane ↔ send-keys)
 │   └── tui.ts                   # terminal /ws client — shares a session with the browser
 ├── serve.ts                     # Bun.serve entry: HTTP + WS(/ws) + WS(/agent) + static UI
 ├── ws.ts                        # WS handlers on /ws (browsers) and /agent (bridges)
@@ -440,11 +335,11 @@ scripts/
 tests/                           # unit + integration (no e2e yet)
 
 Note what is **not** in `src/`: there is no `subprocess.ts`, no
-`manager.ts` that spawns. The server does not spawn. The only
-`Bun.spawn` call in the project lives in `src/cli/attach-orc.ts`,
-which is the third CLI command — `open-rc attach-orc` — the user
-runs in their terminal to drive a CLI-launched `claude` from the
-browser.
+`manager.ts`, no `attach-orc.ts`, no `attach-tmux.ts`. Nothing spawns.
+`grep -rE 'Bun\.spawn|child_process|posix_spawn|fork|exec' src/` comes
+back empty — the project has no spawn, no PTY, no tmux. `claude` is
+run by the user and reaches the relay only through a user-provided
+bridge on `/agent`.
 
 > **Build step is optional.** `scripts/build.ts` exists to bundle
 > Bun + the source into a single binary for users who do not have
@@ -575,11 +470,11 @@ still need to learn per provider.
 
 **Phases 1–7 complete.** `open-rc serve` is a pure WebSocket relay.
 It does not spawn `claude`. It does not manage `claude`. The CLI
-exposes five commands: `serve`, `hub`, `attach-orc`, `tui`, and
-`attach-tmux`. Only `attach-orc` (a user-run bridge) spawns `claude`;
-`attach-tmux` spawns only `tmux` to mirror a `claude` you already
-started; `serve` and `hub` are spawn-free relays and `tui` is a
-spawn-free `/ws` client.
+exposes three commands — `serve`, `hub`, and `tui` — all spawn-free:
+`serve`/`hub` are relays and `tui` is a `/ws` client. Nothing in the
+project spawns a process; you bring your own bridge to `/agent`.
+(`attach-orc` and `attach-tmux` were built and then removed — spawning
+is out of scope; it may return as a deliberate future feature.)
 
 | Phase | What                                     | Status |
 | ----- | ---------------------------------------- | ------ |

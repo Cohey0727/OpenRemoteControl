@@ -7,8 +7,23 @@ on open-rc. Read this before changing anything.
 
 ## Project goal
 
-**Operate a locally-running Claude Code from a browser — including a
-phone.**
+**Share an ALREADY-RUNNING Claude Code session with a browser —
+including a phone. The goal is to share an existing session, NOT to
+spawn a new one.**
+
+The user already has a `claude` running (in a terminal, however they
+like). open-rc's job is to make *that* session visible and driveable
+from a browser: the browser sees the live stream and can send prompts,
+and those prompts land in the same running session. open-rc does not
+start `claude`, does not own it, does not manage its lifecycle.
+
+> **Spawning is out of scope right now.** A command that spawns
+> `claude` (or spawns `tmux`/a PTY to mirror one) may be built in the
+> future, but it is **not needed now and must not exist in the current
+> codebase.** There is no `Bun.spawn`, no `child_process`, no `fork`,
+> no `exec`, no PTY, no tmux anywhere in the project today. If you
+> think you need to spawn something, stop — the answer is a
+> user-provided bridge, not a spawn.
 
 `open-rc` is a single thing: `open-rc serve`, a pure WebSocket relay.
 It does not spawn `claude`. It does not manage `claude`. It does not
@@ -37,14 +52,13 @@ streams, and sends prompts back.
 The motivation: Claude Code's native RemoteControl is locked to
 claude.ai OAuth + Trusted Device enrollment, so non-Anthropic
 providers (Deepseek, GLM, MiniMax, etc.) can't ride it. open-rc
-rebuilds the same UX against any provider by talking to the public
-`claude --print` stream-json mode. The relay itself doesn't care what
-feeds it.
+rebuilds the same UX against any provider by relaying the public
+`stream-json` wire format. The relay itself doesn't care what feeds it.
 
 The user owns the bridge from `claude` to a WebSocket. `open-rc
 serve` does not provide one. That is the user's responsibility —
 because the moment we ship a bridge, we'd be tempted to spawn
-`claude` for them, and spawn is forbidden.
+`claude` for them, and spawning is out of scope.
 
 ---
 
@@ -90,81 +104,53 @@ because the moment we ship a bridge, we'd be tempted to spawn
 
 ## Explicit non-features (do NOT implement)
 
-- **No spawning in the server. Ever.** `open-rc serve` MUST NOT call
-  `Bun.spawn`, `child_process.spawn`, `posix_spawn`, `fork`, `exec`,
-  or any equivalent. It MUST NOT walk `ps`, `lsof`, `/proc`, or any
-  process table. It MUST NOT signal any process (SIGTERM, SIGKILL,
-  SIGINT, SIGHUP) under any circumstance. If the user has a
-  `claude` running in another terminal, `open-rc serve` knows
-  nothing about it. There is no `open-rc spawn` command. There is
-  no `open-rc client` command. The server-side CLI surface is
-  exactly: `serve` and `hub`. (The client-side commands are
-  `attach-orc` — the only spawner — and `tui`, a pure `/ws` client
-  that spawns nothing.)
-- **`open-rc attach-orc` is a CLI command, not a server feature.**
-  `open-rc attach-orc` (the third command, `orc` = "open remote
-  control") is a separate process the user runs in their terminal.
-  It is the ONLY place in the project that calls `Bun.spawn` for
-  `claude`. The server remains spawn-free. `attach-orc` owns its
-  `claude` subprocess (lifecycle, signals, stdio) and merely
-  forwards frames to the running `serve` over `/agent`. Removing
-  it does not change the server's no-spawn property. It bridges the
-  `claude` session **itself** — there are no `--model` / `--claude`
-  passthrough knobs (removed as noise). Its flags are exactly
-  `--server`, `--label`, `--cwd`, `--client-id`. To attach to a
-  remote serve (VPN / ECS / anywhere), set `ORC_BASE_URL` and the
-  `/agent` WebSocket URL is derived from it (`http`→`ws`,
-  `https`→`wss`). `ORC_CLAUDE_BIN` overrides the `claude` binary for
-  tests only; it is not a user-facing flag.
-- **`make setup` registers `attach-orc`/`open-rc` on PATH; the
-  `/attach-orc` slash command is a symlink that calls them.**
-  `make setup` writes launcher scripts to `~/.local/bin` (override
-  `BIN_DIR`) — each is `#!/bin/sh; exec bun run <checkout>/src/cli.ts
-  … "$@"`, so the abs-path anchor lives in the launcher and a
-  `git pull` updates behavior with no reinstall. `commands/attach-orc.md`
-  is the repo-tracked slash command; its body is the generic
-  `attach-orc $ARGUMENTS` (no machine path), so `make setup` can
-  **symlink** it into `~/.claude/commands/` and `git pull` propagates
-  edits. Because the slash command runs in a non-interactive shell, it
-  relies on the install dir being on PATH — `make setup` prints the
-  one-line PATH fix when it isn't. `claude` still spawns in the
-  caller's cwd (attach-orc's `--cwd` defaults to `process.cwd()`), so
-  `/attach-orc` drives whichever project you run it from. Never `sed`
-  or `>`-redirect INTO the command symlink — that truncates the repo
-  source through the link (it bit us once); the launcher, not the
-  command file, carries the abs path. `make teardown` removes the
-  symlink and the launchers. No new spawn — the launcher wraps the
-  existing CLI; the spawn discipline is unaffected.
+- **No spawning anywhere — not just the server, the WHOLE project.**
+  Nothing in open-rc may call `Bun.spawn`, `child_process.spawn`,
+  `posix_spawn`, `fork`, `exec`, or any equivalent. Nothing walks
+  `ps`, `lsof`, `/proc`, or any process table. Nothing signals any
+  process (SIGTERM, SIGKILL, SIGINT, SIGHUP). No PTY, no tmux. If the
+  user has a `claude` running in another terminal, open-rc knows
+  nothing about it beyond whatever frames a user-owned bridge chooses
+  to send over a WebSocket. The CLI surface is exactly `serve`, `hub`,
+  and `tui` — all three spawn nothing. There is no `open-rc spawn`, no
+  `open-rc client`, no `attach-orc`, no `attach-tmux`.
+- **Spawning is a possible FUTURE feature, absent TODAY.** A command
+  that spawns `claude` (or spawns `tmux`/a PTY to mirror an existing
+  terminal session) may be built later if a real need appears. It is
+  not needed now — sharing an already-running session is the goal — so
+  it does not exist in the current codebase. `attach-orc` (spawned
+  `claude`) and `attach-tmux` (spawned `tmux` to mirror a pane) were
+  built and then **removed on 2026-07-02** at the user's direction:
+  spawn is out of scope. Do not re-add a spawner because it seems
+  convenient; adding one is a deliberate, requested decision.
+- **`make setup` registers the `open-rc` launcher on PATH.** It writes
+  one launcher script to `~/.local/bin` (override `BIN_DIR`):
+  `#!/bin/sh; exec bun run <checkout>/src/cli.ts … "$@"`, so the
+  abs-path anchor lives in the launcher and a `git pull` updates
+  behavior with no reinstall. `make teardown` removes it (and cleans up
+  the removed `attach-orc` launcher and `/attach-orc` command symlink
+  if an older setup left them). No spawn — the launcher just wraps the
+  existing CLI.
 - **`open-rc tui` is a terminal front-end, not a bridge.** `tui` is a
   plain `/ws` client — the SAME protocol the browser SPA speaks. It
   attaches to a clientId and renders/sends frames; it spawns nothing
-  and owns no `claude`. Its purpose is a **shared session**: with one
-  `claude` owned by `attach-orc`, the browser and one or more `tui`
-  clients all attach to the same clientId, so a prompt from any of
-  them is echoed to all (the server broadcasts a `user` frame on
-  `send`) and the stream fans out to all. This is how "drive from the
-  browser AND the CLI" is one conversation. It is NOT a live-share of a
-  native `claude` TUI (that would need PTY bridging — now permitted via
-  a separate client-side path — or the private RemoteControl) — the
-  shared session lives in the `attach-orc`-owned `claude`, and `tui` is
-  just another window onto it. Do not confuse `tui` with a "bridge
-  command": it never touches `claude`'s stdio.
+  and owns no `claude`. Its purpose is a **shared session**: a
+  user-owned bridge feeds one running `claude` to `/agent`, and the
+  browser and one or more `tui` clients all attach to the same
+  clientId, so a prompt from any of them is echoed to all (the server
+  broadcasts a `user` frame on `send`) and the stream fans out to all.
+  This is how "drive from the browser AND the CLI" is one conversation.
+  It never touches `claude`'s stdio.
 - **No reverse-engineering the bridge protocol.** open-rc talks to
   the public `--input-format stream-json --output-format stream-json`
   mode only. The private RemoteControl protocol and
   `wss://bridge.claudeusercontent.com` are off-limits.
-- **PTY bridging to an existing `claude` is allowed client-side (was
-  banned).** Attaching to a user-owned interactive `claude`'s
-  controlling terminal — reading its PTY output and writing prompts to
-  its stdin, incl. `TIOCSTI`/`TIOCSWINSZ` and whatever process-table
-  lookup is needed to find that tty — is permitted, to mirror a session
-  the user already started in a terminal into the browser. It is the
-  user's machine and the user's own process. This MUST live in a
-  client-side command (the `attach-orc` family), NEVER in `serve`,
-  which stays a pure relay that spawns nothing, walks no process table,
-  and touches no terminal. Reverse-engineering the private
-  RemoteControl protocol / `wss://bridge.claudeusercontent.com` is a
-  different line and remains off-limits (see above).
+- **No TTY splicing / PTY hijacking in the codebase.** open-rc ships
+  no code that attaches to another process's controlling terminal,
+  uses `TIOCSTI`/`TIOCSWINSZ`, or reverse-engineers claude's IPC. (A
+  future spawner might mirror a terminal — see the goal — but that is
+  speculative and absent today.) A `claude` in a terminal is a black
+  box; open-rc only ever sees frames a user-owned bridge sends.
 - **History = replay the live stream it's already relaying, in memory
   only.** The server keeps a bounded, per-connected-client ring buffer
   of the conversation frames it relays (`BridgeConn.history`, cap
@@ -210,12 +196,12 @@ is what gets relayed.
   frames the user's bridge sends (text / text_delta / thinking /
   tool_use / tool_result / permission_request / done / error, tagged
   with the clientId they came from). `text_delta` is a streaming
-  fragment of the in-progress reply (attach-orc passes
-  `--include-partial-messages`); the browser renders it live with a
-  typing indicator while waiting, and the server stamps `done` frames
-  with a `ts` so turn dividers show a wall-clock time even on replay.
-  The `tui` command speaks this exact same `/ws` protocol — it is
-  just another attached client.
+  fragment of the in-progress reply — a bridge that has a token stream
+  can send these (e.g. from `claude --include-partial-messages`) and
+  the browser renders them live with a typing indicator while waiting;
+  the server stamps `done` frames with a `ts` so turn dividers show a
+  wall-clock time even on replay. The `tui` command speaks this exact
+  same `/ws` protocol — it is just another attached client.
 
 The server does not define a client-side protocol. A client WS that
 speaks any framed WebSocket messages at all will work, because the
@@ -231,7 +217,7 @@ route:
 - `GET /ws` — browsers (and `tui`) connect here. The server reads
   `attach` / `list_clients` / `send` / `permission_response` and
   routes frames to/from the right client WS.
-- `GET /agent` — user-owned bridges (e.g. `attach-orc`) connect here.
+- `GET /agent` — user-owned bridges connect here.
 - `GET /` and `GET /sessions/<id>` both serve the SPA shell. The
   browser reflects the active session in the URL path
   (`/sessions/<clientId>`, via `history.pushState`), so a reload or a
@@ -281,13 +267,14 @@ want one. open-rc does not help with that.
 - **Don't leave spawn references in comments.** If a comment mentions
   "spawn" or "subprocess" in a serving context, remove it. The
   constraint is the constraint.
-- **Don't spawn `claude --bare` from attach-orc.** Bare mode's
-  Anthropic auth is strictly `ANTHROPIC_API_KEY`/`apiKeyHelper` (OAuth
-  and keychain are never read), so on a subscription-login machine
-  every bridged prompt returns "Not logged in". attach-orc spawns
-  `claude --print --input-format stream-json --output-format
-  stream-json --verbose` — same public wire format, but auth resolves
-  exactly like the user's own `claude -p`. (Bit us 2026-07-02.)
+- **If a future spawner is ever built, spawn `claude --print`, NOT
+  `--bare`.** (Kept as a hard-won note; no spawner exists today.) Bare
+  mode's Anthropic auth is strictly `ANTHROPIC_API_KEY`/`apiKeyHelper`
+  (OAuth and keychain are never read), so on a subscription-login
+  machine every prompt returns "Not logged in". `--print
+  --input-format stream-json --output-format stream-json --verbose` is
+  the same public wire format but resolves auth like the user's own
+  `claude -p`. (Learned while `attach-orc` existed, 2026-07-02.)
 
 ---
 
@@ -306,17 +293,18 @@ want one. open-rc does not help with that.
 - Documentation follow-up is mandatory when code changes — update
   README, docs/roadmap, docs/architecture, docs/survey,
   docs/tech-stack, SECURITY.md, and this file in the same task.
-- The CLI exposes five commands: `serve`, `hub`, `attach-orc`, `tui`,
-  and `attach-tmux`. `serve` and `hub` are spawn-free relays; `tui` is
-  a spawn-free `/ws` client. `attach-orc` is the only place that
-  `Bun.spawn`s `claude`. `attach-tmux` `Bun.spawn`s only `tmux` (never
-  `claude`): it mirrors an EXISTING interactive `claude` the user
-  already started in a tmux pane — polling `capture-pane` for output
-  (relayed as `screen` frames) and delivering browser prompts with
-  `send-keys`. It NEVER kills the pane (the session is the user's). The
-  server stays spawn-free and touches no terminal. There is no bare
-  `attach` command (the historical `attach` was renamed to
-  `attach-orc`). There is no `pipe`, no `client`, no `spawn`.
+- **Commit every change immediately, without being asked, and push.**
+  After any substantive edit (once lint/typecheck/tests are green),
+  `git add -A && git commit` and `git push` right away — never leave
+  the working tree dirty, never wait for the user to say "commit". The
+  user granted standing authorization for this repo (do not prompt).
+  Commit message format: `<type>: <concise Japanese summary> @<branch>`
+  (type ∈ feat/fix/refactor/chore/docs/test), subject line only.
+- The CLI exposes three commands: `serve`, `hub`, and `tui` — all
+  spawn-free. `serve` and `hub` are byte-pass-through relays; `tui` is
+  a `/ws` client that shares a relayed session with the browser. There
+  is no `attach-orc`, no `attach-tmux`, no `attach`, no `pipe`, no
+  `client`, no `spawn` — spawning is out of scope (see Project goal).
 - PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
   and the icon PNGs are checked in as static files and served
   straight off disk. `scripts/build-icons.ts` is a maintainer-only

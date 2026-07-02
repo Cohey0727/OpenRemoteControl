@@ -1,9 +1,20 @@
 # open-rc — Roadmap
 
-> **Last revised:** 2026-07-01 — Phase 7 (no-spawn pivot) complete.
-> All seven phases done. The server is a pure WebSocket relay: no
-> spawn, no process table, no take-over. The CLI exposes exactly
-> `serve` and `hub`.
+> **Last revised:** 2026-07-02. The server is a pure WebSocket relay:
+> no spawn, no process table, no take-over. The CLI exposes exactly
+> `serve`, `hub`, and `tui` — all spawn-free.
+
+> **⚠ 2026-07-02 — spawn helpers removed.** The phases below that
+> shipped spawning CLI commands — **Phase 7.5 `attach-orc`** (spawned
+> `claude`), **Phase 7.6 `/attach-orc`** (its slash command), and
+> **Phase 8.3 `attach-tmux`** (spawned `tmux` to mirror a pane) — were
+> **removed** at the user's direction: spawning is out of scope. The
+> goal is to share an ALREADY-RUNNING session, and the user brings
+> their own bridge to `/agent`; open-rc spawns nothing. A spawner may
+> return only as a deliberate future feature. The entries are kept
+> below as a record of what was built and why, not as current
+> features. (Phase 8.2's streaming/`text_delta`/timestamp work and the
+> `tui` shared-session work survive — they don't spawn.)
 
 ---
 
@@ -282,7 +293,7 @@ belongs.
 
 ---
 
-## Phase 7.5 — `open-rc attach-orc` CLI (third command) — ✓ DONE
+## Phase 7.5 — `open-rc attach-orc` CLI (third command) — ✓ DONE, ✗ REMOVED 2026-07-02
 
 **Goal.** Give the user a one-liner to drive a CLI-launched `claude`
 session from the browser without writing a bridge by hand. The
@@ -329,7 +340,7 @@ while the user gets an obvious attach path.
 - `tests/attach-orc-cli.test.ts` — full round-trip test through a
   mock `claude` binary.
 
-### Phase 7.6 — `/attach-orc` slash command — ✓ DONE
+### Phase 7.6 — `/attach-orc` slash command — ✓ DONE, ✗ REMOVED 2026-07-02
 
 **Goal.** Let the user launch the bridge from inside Claude Code
 itself, instead of opening a separate terminal to run the CLI.
@@ -469,7 +480,7 @@ one was.
 - IME guard on the composer (`isComposing` / keyCode 229) so a
   conversion-commit Enter doesn't send.
 
-### Phase 8.3 — `attach-tmux`: mirror an existing terminal `claude` — ✓ DONE
+### Phase 8.3 — `attach-tmux`: mirror an existing terminal `claude` — ✓ DONE, ✗ REMOVED 2026-07-02
 
 **Goal.** Drive the interactive `claude` the user already started in a
 terminal (not a fresh headless one) from the browser, with its live TUI

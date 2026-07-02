@@ -415,11 +415,15 @@ direction but requires confirmation.
 **Adopt (b) — `claude --bare --output-format stream-json` subprocess,
 pocket-claude style.**
 
-> **Update (2026-07-02):** the shipped `attach-orc` uses `--print`
-> rather than `--bare`. Bare mode's Anthropic auth is strictly
-> `ANTHROPIC_API_KEY`/`apiKeyHelper`, so on OAuth-login machines every
-> prompt returned "Not logged in". Same public stream-json wire format
-> either way; see [`architecture.md`](./architecture.md) §8.2.
+> **Update (2026-07-02):** this "adopt a spawning subprocess" decision
+> was ultimately reversed. Helpers that spawned (`attach-orc` spawning
+> `claude`; `attach-tmux` spawning `tmux` to mirror a pane) were built
+> and then removed the same day — spawning is out of scope; open-rc
+> ships a pure relay and the user brings their own bridge. The auth
+> note still stands for any future spawner: use `--print`, not
+> `--bare` (bare authenticates only via `ANTHROPIC_API_KEY`, so
+> OAuth-login machines get "Not logged in"). See
+> [`architecture.md`](./architecture.md) §8.2.
 
 Concrete reasons:
 
@@ -474,16 +478,15 @@ Why this pivot:
   setup they already use.
 
 We still don't chase `barjakuzu`'s `/remote-control` handoff (it needs
-kill-and-swap, which we banned).
+kill-and-swap, which we banned) or `permissionnine9`'s PTY/TTY
+mirroring.
 
-> **Update (2026-07-02):** we DID adopt a variant of `permissionnine9`'s
-> PTY/TTY mirroring, after lifting the ban — but as an *optional
-> client-side* command (`attach-tmux`), not in the server. It mirrors an
-> existing tmux `claude` via `capture-pane`/`send-keys` and relays the
-> screen as `screen` frames. The primary path (`attach-orc`) still uses
-> structured stream-json; tmux mirroring is the opt-in way to drive a
-> `claude` you already started in a terminal. The server never touches a
-> terminal.
+> **Update (2026-07-02):** a `attach-tmux` command that mirrored an
+> existing tmux `claude` via `capture-pane`/`send-keys` (relaying the
+> screen as `screen` frames) was briefly built and then removed the
+> same day — it spawned `tmux`, and spawning is out of scope. open-rc
+> ships a pure relay; the user brings their own bridge. The server
+> never touches a terminal.
 
 ---
 
