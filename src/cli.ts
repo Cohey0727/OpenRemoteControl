@@ -69,15 +69,13 @@ if (command === 'serve' || command === '') {
   const dim = tty ? '\x1b[90m' : '';
   const bold = tty ? '\x1b[1m' : '';
   const off = tty ? '\x1b[0m' : '';
+  console.log(`${amber}${bold}open-rc serve${off} ${dim}·${off} relay is up`);
+  console.log(` ${amber}◉${off} ${dim}UI${off}      ${cyan}http://${host}:${port}/${off}`);
   console.log(
-    `${amber}${bold}open-rc serve${off} ${dim}·${off} relaying on ${cyan}http://${host}:${port}${off}`,
-  );
-  console.log(`  ${dim}UI${off}     ${cyan}http://${host}:${port}/${off}`);
-  console.log(
-    `  ${dim}ws${off}     ${cyan}ws://${host}:${port}/ws${off}     ${dim}browsers / tui${off}`,
+    ` ${amber}◉${off} ${dim}ws${off}      ${cyan}ws://${host}:${port}/ws${off}     ${dim}browsers / tui${off}`,
   );
   console.log(
-    `  ${dim}agent${off}  ${cyan}ws://${host}:${port}/agent${off}  ${dim}bridges — /attach-orc lands here${off}`,
+    ` ${amber}◉${off} ${dim}agent${off}   ${cyan}ws://${host}:${port}/agent${off}  ${dim}bridges — /attach-orc lands here${off}`,
   );
 
   const shutdown = async () => {

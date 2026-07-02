@@ -73,16 +73,15 @@ relay-diagram:
 	  '      $(DIM)phone / laptop        the relay        you own this$(OFF)' \
 	  ''
 
+# URL list intentionally absent: the server itself prints the ◉ URL
+# block on boot (also when launched without make), so the banner
+# would duplicate it.
 .PHONY: serve-hints
 serve-hints:
 	@printf '%s\n' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
 	  '   $(CYAN)/attach-orc$(OFF)     $(DIM)inside claude — THIS session appears in the sidebar$(OFF)' \
 	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto the same session$(OFF)' \
-	  '' \
-	  ' $(AMBER)◉$(OFF) $(DIM)UI$(OFF)      $(CYAN)http://$(HOST):$(PORT)/$(OFF)' \
-	  ' $(AMBER)◉$(OFF) $(DIM)ws$(OFF)      $(CYAN)ws://$(HOST):$(PORT)/ws$(OFF)     $(DIM)browsers / tui$(OFF)' \
-	  ' $(AMBER)◉$(OFF) $(DIM)agent$(OFF)   $(CYAN)ws://$(HOST):$(PORT)/agent$(OFF)  $(DIM)bridges — /attach-orc lands here$(OFF)' \
 	  '' \
 	  ' $(DIM)ctrl-c stops the relay$(OFF)' \
 	  ''
