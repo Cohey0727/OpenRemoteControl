@@ -62,10 +62,23 @@ if (command === 'serve' || command === '') {
     ...(pushDisabled ? { pushDisabled } : {}),
   });
 
-  console.log(`open-rc serve listening on http://${host}:${port}`);
-  console.log(`UI:    http://${host}:${port}/`);
-  console.log(`WS:    ws://${host}:${port}/ws     (browsers)`);
-  console.log(`Agent: ws://${host}:${port}/agent  (user-owned bridges)`);
+  // Styled only on a TTY so piped/logged output stays grep-friendly.
+  const tty = process.stdout.isTTY === true;
+  const amber = tty ? '\x1b[38;5;208m' : '';
+  const cyan = tty ? '\x1b[36m' : '';
+  const dim = tty ? '\x1b[90m' : '';
+  const bold = tty ? '\x1b[1m' : '';
+  const off = tty ? '\x1b[0m' : '';
+  console.log(
+    `${amber}${bold}open-rc serve${off} ${dim}·${off} relaying on ${cyan}http://${host}:${port}${off}`,
+  );
+  console.log(`  ${dim}UI${off}     ${cyan}http://${host}:${port}/${off}`);
+  console.log(
+    `  ${dim}ws${off}     ${cyan}ws://${host}:${port}/ws${off}     ${dim}browsers / tui${off}`,
+  );
+  console.log(
+    `  ${dim}agent${off}  ${cyan}ws://${host}:${port}/agent${off}  ${dim}bridges — /attach-orc lands here${off}`,
+  );
 
   const shutdown = async () => {
     console.log('\nshutting down...');

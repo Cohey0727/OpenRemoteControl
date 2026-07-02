@@ -49,6 +49,45 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ---------------------------------------------------------------------------
+# Banner pieces (shared by setup / serve / dev)
+# ---------------------------------------------------------------------------
+
+.PHONY: logo
+logo:
+	@printf '%s\n' \
+	  '' \
+	  '  $(AMBER)$(BOLD)██████  ██████  ██████$(OFF)' \
+	  '  $(AMBER)$(BOLD)██  ██  ██  ██  ██    $(OFF)' \
+	  '  $(AMBER)$(BOLD)██  ██  █████   ██    $(OFF)' \
+	  '  $(AMBER)$(BOLD)██  ██  ██ ██   ██    $(OFF)' \
+	  '  $(AMBER)$(BOLD)██████  ██  ██  ██████$(OFF)' \
+	  '  $(DIM)o p e n · r e m o t e · c o n t r o l$(OFF)' \
+	  ''
+
+.PHONY: relay-diagram
+relay-diagram:
+	@printf '%s\n' \
+	  '   $(DIM)┌─────────┐         ┌─────────┐         ┌─────────┐$(OFF)' \
+	  '   $(DIM)│ browser │$(CYAN)◀──ws───▶$(DIM)│ $(AMBER)open·rc$(DIM) │$(CYAN)◀─agent─▶$(DIM)│  bridge │$(OFF)' \
+	  '   $(DIM)└─────────┘         └─────────┘         └─────────┘$(OFF)' \
+	  '      $(DIM)phone / laptop        the relay        you own this$(OFF)' \
+	  ''
+
+.PHONY: serve-hints
+serve-hints:
+	@printf '%s\n' \
+	  ' $(BOLD)share the session you are already in$(OFF)' \
+	  '   $(CYAN)/attach-orc$(OFF)     $(DIM)inside claude — THIS session appears in the sidebar$(OFF)' \
+	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto the same session$(OFF)' \
+	  '' \
+	  ' $(AMBER)◉$(OFF) $(DIM)UI$(OFF)      $(CYAN)http://$(HOST):$(PORT)/$(OFF)' \
+	  ' $(AMBER)◉$(OFF) $(DIM)ws$(OFF)      $(CYAN)ws://$(HOST):$(PORT)/ws$(OFF)     $(DIM)browsers / tui$(OFF)' \
+	  ' $(AMBER)◉$(OFF) $(DIM)agent$(OFF)   $(CYAN)ws://$(HOST):$(PORT)/agent$(OFF)  $(DIM)bridges — /attach-orc lands here$(OFF)' \
+	  '' \
+	  ' $(DIM)ctrl-c stops the relay$(OFF)' \
+	  ''
+
+# ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
 
@@ -58,7 +97,7 @@ install: ## Install deps (bun install)
 	@echo "Done. Run \`make serve\` (or \`bun run serve\`) to launch open-rc."
 
 .PHONY: setup
-setup: ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command
+setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command
 	@# Install the launcher on PATH. It's a thin wrapper around the
 	@# current source, so `git pull` updates behavior with no rebuild.
 	@mkdir -p $(BIN_DIR)
@@ -72,19 +111,6 @@ setup: ## Register the open-rc launcher, Claude Code hooks, and /attach-orc comm
 	@# ~/.claude/settings.json + the /attach-orc slash command symlink.
 	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/open-rc
 	@printf '%s\n' \
-	  '' \
-	  '  $(AMBER)$(BOLD)██████  ██████  ██████$(OFF)' \
-	  '  $(AMBER)$(BOLD)██  ██  ██  ██  ██    $(OFF)' \
-	  '  $(AMBER)$(BOLD)██  ██  █████   ██    $(OFF)' \
-	  '  $(AMBER)$(BOLD)██  ██  ██ ██   ██    $(OFF)' \
-	  '  $(AMBER)$(BOLD)██████  ██  ██  ██████$(OFF)' \
-	  '  $(DIM)o p e n · r e m o t e · c o n t r o l$(OFF)' \
-	  '' \
-	  '   $(DIM)┌─────────┐         ┌─────────┐         ┌─────────┐$(OFF)' \
-	  '   $(DIM)│ browser │$(CYAN)◀──ws───▶$(DIM)│ $(AMBER)open·rc$(DIM) │$(CYAN)◀─agent─▶$(DIM)│  bridge │$(OFF)' \
-	  '   $(DIM)└─────────┘         └─────────┘         └─────────┘$(OFF)' \
-	  '      $(DIM)phone / laptop        the relay        you own this$(OFF)' \
-	  '' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / SessionEnd)$(OFF)' \
 	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md' \
@@ -121,8 +147,8 @@ uninstall: ## No-op (kept for symmetry with install)
 # ---------------------------------------------------------------------------
 
 .PHONY: serve
-serve: ## Start the local WebSocket relay + SPA
-	bun run $(BIN) serve --host $(HOST) --port $(PORT)
+serve: logo relay-diagram serve-hints ## Start the local WebSocket relay + SPA
+	@bun run $(BIN) serve --host $(HOST) --port $(PORT)
 
 .PHONY: hub
 hub: ## Start the public hub relay (Phase 4)
@@ -133,8 +159,9 @@ tui: ## Terminal window onto a relayed session (pure /ws client)
 	bun run $(BIN) tui --server ws://$(HOST):$(PORT)/ws
 
 .PHONY: dev
-dev: ## Start the server in --watch mode (auto-restart on file change)
-	bun run --watch $(BIN) serve --host $(HOST) --port $(PORT)
+dev: logo relay-diagram serve-hints ## Start the server in --watch mode (auto-restart on file change)
+	@printf '%s\n' ' $(AMBER)⟳$(OFF) $(DIM)watch mode — the relay restarts on every file change$(OFF)' ''
+	@bun run --watch $(BIN) serve --host $(HOST) --port $(PORT)
 
 # ---------------------------------------------------------------------------
 # Quality gates
