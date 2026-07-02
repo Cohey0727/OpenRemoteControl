@@ -3,7 +3,7 @@
 > Claude Code's RemoteControl control plane — open, self-hostable, and
 > usable against any Claude Code-compatible LLM provider.
 
-[![Status: Server-only relay, no spawn](https://img.shields.io/badge/status-server%20only%20no%20spawn-yellow)](#status)
+[![Status: Server-only relay](https://img.shields.io/badge/status-server%20only%20relay-yellow)](#status)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
 [![Runtime: Bun ≥ 1.3](https://img.shields.io/badge/runtime-bun%201.3+-yellow)](#requirements)
 
@@ -23,8 +23,7 @@ endpoint.
 `open-rc` is a **drop-in replacement for that control plane**, as a
 single thing: `open-rc serve`, a pure WebSocket relay.
 
-The relay does not spawn `claude`. It does not manage `claude`. It
-does not know `claude` is a process. The user runs `claude`
+The relay never starts or manages `claude`. The user runs `claude`
 themselves on whichever machine they want, and arranges for the
 `stream-json` frames to flow over a WebSocket to `open-rc serve`. The
 browser connects to `open-rc serve`, sees the connected streams, and
@@ -52,8 +51,7 @@ bun run src/cli.ts serve --host 127.0.0.1 --port 7322
 # → /agent:  ws://127.0.0.1:7322/agent  (user-owned bridges)
 ```
 
-That's the entire server. `open-rc serve` is a pure WebSocket
-relay — it never spawns anything.
+That's the entire server. `open-rc serve` is a pure WebSocket relay.
 
 ## Drive a `claude` session from your browser
 
@@ -74,12 +72,10 @@ fix. `make teardown` removes the launcher again.
 
 ### Bring your own bridge
 
-open-rc does not ship a bridge, and the server never spawns anything —
-the moment it did, it would be tempted to spawn and manage `claude`,
-which is out of scope. You wire your own: run `claude` in stream-json
-mode and forward its stdio to `ws://127.0.0.1:7322/agent` with a small
-script (a few lines of Bun/Node, or any framed-WebSocket tool). The
-bridge:
+open-rc does not ship a bridge. You wire your own: run `claude` in
+stream-json mode and forward its stdio to `ws://127.0.0.1:7322/agent`
+with a small script (a few lines of Bun/Node, or any framed-WebSocket
+tool). The bridge:
 
 1. opens `/agent` and sends a `register { label, cwd }` frame;
 2. relays each stream-json event from `claude`'s stdout as a frame
@@ -126,7 +122,7 @@ open-rc tui --server ws://192.168.1.10:7322/ws   # or a remote serve
 
 Inside it, type to send a prompt; `/allow` or `/deny` answer a
 permission request; `/clients`, `/attach <id>`, `/quit`, `/help` do the
-obvious things. `tui` spawns nothing and owns no `claude` — it and the
+obvious things. `tui` starts nothing and owns no `claude` — it and the
 browser are both just clients of `serve`.
 
 ### Streaming, loading state, and turn timestamps
@@ -233,12 +229,11 @@ open-rc tui
 ```
 
 That is the entire CLI surface. There is no `open-rc client`, no
-`open-rc spawn`, no `attach-orc`, no `attach-tmux`.
+`attach-orc`, no `attach-tmux`.
 
-> Note: three commands total — `serve` and `hub` (spawn-free relays)
-> and `tui` (a spawn-free `/ws` client that shares a relayed session
-> with the browser). Nothing in the project spawns a process; you bring
-> your own bridge to `/agent`.
+> Note: three commands total — `serve` and `hub` (relays) and `tui`
+> (a `/ws` client that shares a relayed session with the browser). You
+> bring your own bridge to `/agent`.
 
 ---
 
@@ -264,7 +259,7 @@ That is the entire CLI surface. There is no `open-rc client`, no
 │                                  ┌───────┴─────────────┐           │
 │                                  │ claude             │           │
 │                                  │  (user's process,  │           │
-│                                  │   user spawned it) │           │
+│                                  │   user started it) │           │
 │                                  └─────────────────────┘           │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
@@ -335,9 +330,7 @@ scripts/
 tests/                           # unit + integration (no e2e yet)
 
 Note what is **not** in `src/`: there is no `subprocess.ts`, no
-`manager.ts`, no `attach-orc.ts`, no `attach-tmux.ts`. Nothing spawns.
-`grep -rE 'Bun\.spawn|child_process|posix_spawn|fork|exec' src/` comes
-back empty — the project has no spawn, no PTY, no tmux. `claude` is
+`manager.ts`, no `attach-orc.ts`, no `attach-tmux.ts`. `claude` is
 run by the user and reaches the relay only through a user-provided
 bridge on `/agent`.
 
@@ -358,22 +351,19 @@ documented** `--input-format stream-json --output-format stream-json
 output over WS. Same UX, no protocol chasing. See
 [`docs/survey.md`](./docs/survey.md) for the full survey.
 
-### Why no spawn?
+### Why bring your own bridge?
 
-Because the moment we ship a bridge that spawns `claude`, we are
-tempted to also "manage" the subprocess — restart it, signal it,
-walk `ps` to find it. That path leads to take-over: open-rc trying
-to find and replace a `claude` the user started elsewhere. Take-over
-is forbidden. The cleanest way to keep the take-over temptation
-permanently off the table is to ship a server that has no spawn
-capability at all. The user's machine, the user's pipes, the user's
-problem.
+Because the moment we ship a bridge that starts `claude`, we are
+tempted to also "manage" it — restart it, signal it, walk `ps` to
+find it. That path leads to take-over: open-rc trying to find and
+replace a `claude` the user started elsewhere. Take-over is
+forbidden, so the relay leaves process control entirely to the user.
+The user's machine, the user's pipes, the user's problem.
 
 ### What `open-rc` does NOT do
 
-- It does **not** spawn anything. No `Bun.spawn`, no `fork`, no
-  `exec`, no PTY attach. The server's process table never changes
-  after `serve` boots.
+- It does **not** start `claude` or any other process. No PTY attach.
+  The server's process table never changes after `serve` boots.
 - It does **not** walk the process table. No `ps`, no `lsof`, no
   `/proc`, no signal-sending.
 - It does **not** speak any model API. The CLI does that, through
@@ -387,7 +377,7 @@ problem.
 - It does **not** take over external `claude` sessions. The server
   has no way to find one.
 - It does **not** create clients from the browser. The browser shows
-  what bridges are currently connected; it cannot spawn one. To
+  what bridges are currently connected; it cannot start one. To
   start a new "session" in the sidebar, open another bridge from
   another terminal.
 
@@ -401,9 +391,9 @@ problem.
   breakdown, wire protocol, persistence (in-memory replay only, no disk),
   open questions.
 - [`docs/roadmap.md`](./docs/roadmap.md) — phased implementation
-  plan with exit criteria. Phase 7 is the no-spawn pivot.
+  plan with exit criteria. Phase 7 is the pivot to a pure relay.
 - [`docs/survey.md`](./docs/survey.md) — comparison of 6 similar
-  projects and the reasoning for the no-spawn design.
+  projects and the reasoning for the relay-only design.
 - [`docs/tech-stack.md`](./docs/tech-stack.md) — concrete picks and
   alternatives considered.
 
@@ -468,13 +458,12 @@ still need to learn per provider.
 
 ## Status
 
-**Phases 1–7 complete.** `open-rc serve` is a pure WebSocket relay.
-It does not spawn `claude`. It does not manage `claude`. The CLI
-exposes three commands — `serve`, `hub`, and `tui` — all spawn-free:
-`serve`/`hub` are relays and `tui` is a `/ws` client. Nothing in the
-project spawns a process; you bring your own bridge to `/agent`.
-(`attach-orc` and `attach-tmux` were built and then removed — spawning
-is out of scope; it may return as a deliberate future feature.)
+**Phases 1–7 complete.** `open-rc serve` is a pure WebSocket relay
+that never starts or manages `claude`. The CLI exposes three commands
+— `serve`, `hub`, and `tui`: `serve`/`hub` are relays and `tui` is a
+`/ws` client. You bring your own bridge to `/agent`. (`attach-orc` and
+`attach-tmux` were built and then removed as out of scope; they may
+return as a deliberate future feature.)
 
 | Phase | What                                     | Status |
 | ----- | ---------------------------------------- | ------ |
@@ -484,7 +473,7 @@ is out of scope; it may return as a deliberate future feature.)
 | 4     | Hub mode (Ed25519 enrollment, sqlite)    | ✓      |
 | 5     | Web Push (VAPID, browser notifications)  | ✓      |
 | 6     | Hardening (tests, typecheck, cross-build)| ✓      |
-| 7     | **No-spawn pivot** — server has no spawn capability | ✓ |
+| 7     | **Relay pivot** — server never starts processes     | ✓      |
 | 8.1   | PWA install + offline app-shell cache     | ✓      |
 
 ### UI at a glance

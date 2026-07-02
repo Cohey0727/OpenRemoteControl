@@ -10,13 +10,10 @@
  *           client (like the browser) — attaches to a clientId and
  *           renders/sends frames.
  *
- * Spawn discipline:
- *   NONE of these commands spawn anything. `serve`/`hub` are
- *   byte-pass-through relays; `tui` is a WebSocket client. The project
- *   contains no `Bun.spawn`, no `child_process`, no `fork`, no `exec`,
- *   no PTY, no tmux. The user runs `claude` themselves and brings their
- *   own bridge that pipes its stream-json to the `/agent` WebSocket.
- *   open-rc never spawns, manages, signals, or mirrors `claude`.
+ * All three run no processes of their own. `serve`/`hub` are
+ * byte-pass-through relays; `tui` is a WebSocket client. The user runs
+ * `claude` themselves and brings their own bridge that pipes its
+ * stream-json to the `/agent` WebSocket; open-rc only relays.
  */
 
 import { parseFlags } from './cli/flags.ts';

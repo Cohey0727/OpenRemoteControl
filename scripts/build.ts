@@ -73,19 +73,8 @@ async function main(): Promise<void> {
     const outName = `open-rc-${t.os}-${t.arch}${t.ext}`;
     const outPath = join(distDir, outName);
     console.log(`→ ${outName}`);
-    const proc = Bun.spawnSync({
-      cmd: [
-        'bun',
-        'build',
-        '--compile',
-        `--target=${t.bunTarget}`,
-        '--outfile',
-        outPath,
-        entrypoint,
-      ],
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
+    const proc =
+      await Bun.$`bun build --compile --target=${t.bunTarget} --outfile ${outPath} ${entrypoint}`.nothrow();
     if (proc.exitCode !== 0) {
       throw new Error(`bun build failed for ${outName}`);
     }

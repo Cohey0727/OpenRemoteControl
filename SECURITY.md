@@ -23,10 +23,10 @@ forwards user prompts and tool-call requests to Claude Code.
   browser's `permission_response` back. Whether tool calls actually
   pause for approval depends entirely on the user's `claude` and
   their bridge (e.g. whether the bridge wires a `PreToolUse` hook);
-  the server itself neither spawns `claude` nor enforces a policy —
+  the server itself neither starts `claude` nor enforces a policy —
   it only forwards the frames. There is no server-side PreToolUse
   hook and no `bypassPermissions` default (that subsystem was
-  removed with the no-spawn pivot).
+  removed when the server became a pure relay).
 - **Audit log**: every permission decision and a session lifecycle
   events are appended to `~/.local/share/open-rc/audit.jsonl`.
   No rotation is performed automatically; check the file periodically
@@ -57,8 +57,8 @@ forwards user prompts and tool-call requests to Claude Code.
 - **Take-over trust**: not a concern. There is no
   `/api/external-sessions/:pid/claim` endpoint, no
   `claim_external_session` WS frame, and no take-over flow of any
-  kind. `open-rc serve` cannot kill or replace any process it
-  didn't spawn, and it didn't spawn anything.
+  kind. `open-rc serve` starts no processes, so it has none to kill
+  or replace.
 - **Authorization**: the audit log records decisions but does not
   enforce policy. Read it.
 - **VAPID private key rotation**: there's no built-in rotation;
@@ -66,25 +66,16 @@ forwards user prompts and tool-call requests to Claude Code.
 - **Device key revocation**: a hub can disable a device by deleting
   it from the SQLite store (`hub.db`), but no UI ships for this in
   v0.1.
-- **No spawn. No subprocess management. No process discovery.**
-  NOTHING in open-rc calls `Bun.spawn`, `fork`, `exec`, or any
-  equivalent. Nothing walks `ps`, `lsof`, `/proc`, or any process
-  table. Nothing signals any process (SIGTERM, SIGKILL, SIGINT,
-  SIGHUP). No PTY, no tmux. The entire CLI is `serve`, `hub`, and
-  `tui`, and all three spawn nothing —
-  `grep -rE 'Bun\.spawn|child_process|posix_spawn|fork|exec' src/` is
-  empty. (Spawning helpers `attach-orc` and `attach-tmux` existed
-  briefly and were removed on 2026-07-02; a spawner may return only as
-  a deliberate future feature. No `Bun.spawn` remains today.)
-  `open-rc hub` follows the same no-spawn rule as `serve`.
-  The user runs `claude` themselves; whatever they do with it is
-  their business. A `claude` running in another terminal is
-  unaffected by anything `open-rc serve` does — open-rc doesn't
-  know it's there. There is no `/api/external-sessions` endpoint,
-  no `claim_external_session` WS frame, no `/internal/hook` endpoint
-  for a PreToolUse hook (that was tied to a server-spawned
-  subprocess). The server's process table is exactly what Bun
-  started when the user ran `open-rc serve`. Nothing else.
+- **Starts no processes.** open-rc launches nothing and manages no
+  subprocess: no process-creation calls (`fork`, `exec`, or the
+  Bun/Node equivalents), no walking `ps`, `lsof`, or `/proc`, no
+  signalling (SIGTERM, SIGKILL, SIGINT, SIGHUP), no PTY, no tmux. The
+  entire CLI is `serve`, `hub`, and `tui`, each of which runs only its
+  own process. The user runs `claude` themselves; a `claude` in
+  another terminal is untouched, because open-rc doesn't know it is
+  there. There is no `/api/external-sessions` endpoint, no
+  `claim_external_session` WS frame, and no `/internal/hook`
+  PreToolUse endpoint.
 
 ## Reporting a vulnerability
 

@@ -19,7 +19,7 @@
  *   GET  /ws                     → browser WebSocket (upgrade)
  *   GET  /agent                  → bridge WebSocket (upgrade)
  *
- * No `/internal/hook`, no `/api/sessions`, no take-over, no spawn.
+ * No `/internal/hook`, no `/api/sessions`, no take-over.
  */
 
 import { join, relative, resolve, sep } from 'node:path';

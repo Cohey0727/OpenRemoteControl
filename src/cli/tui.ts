@@ -3,7 +3,7 @@
  * is relaying.
  *
  * It is a plain `/ws` client, exactly like the browser SPA: it does NOT
- * spawn or own `claude`. A user-owned bridge owns the `claude` (piping
+ * start or own `claude`. A user-owned bridge owns the `claude` (piping
  * its stream-json to `/agent`); the browser and this `tui` are both
  * clients of `open-rc serve`, attached to the same clientId — so they
  * share ONE live session. A prompt typed here shows up in the browser

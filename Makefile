@@ -3,10 +3,9 @@
 # Thin convenience layer over the npm scripts in package.json. Run
 # `make help` for the list.
 #
-# The Makefile mirrors the CLI: `serve`/`hub` (spawn-free relays),
-# `attach-orc` (spawns a fresh `claude`), and `attach-tmux` (mirrors a
-# `claude` you already started in tmux). There is no `make client`, no
-# `make spawn`. The server itself never spawns anything.
+# The Makefile mirrors the CLI: `serve`, `hub`, and `tui` — pure
+# relays and a WebSocket client. The user runs `claude` themselves and
+# brings their own bridge to /agent.
 
 SHELL := /bin/sh
 .SHELLFLAGS := -eu -c
@@ -86,7 +85,7 @@ setup: ## Register the open-rc launcher on PATH
 	  '' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  '' \
-	  ' $(BOLD)the server spawns nothing$(OFF) $(DIM)— you bring your own bridge to /agent$(OFF)' \
+	  ' $(BOLD)bring your own bridge$(OFF) $(DIM)— pipe your claude to /agent$(OFF)' \
 	  '   $(CYAN)open-rc serve$(OFF)   $(DIM)the relay + SPA$(OFF)' \
 	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto a relayed session$(OFF)' \
 	  ''
@@ -124,7 +123,7 @@ hub: ## Start the public hub relay (Phase 4)
 	bun run $(BIN) hub --host $(HOST) --port 7443
 
 .PHONY: tui
-tui: ## Terminal window onto a relayed session (spawn-free /ws client)
+tui: ## Terminal window onto a relayed session (pure /ws client)
 	bun run $(BIN) tui --server ws://$(HOST):$(PORT)/ws
 
 .PHONY: dev

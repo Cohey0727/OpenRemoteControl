@@ -1,11 +1,11 @@
 # open-rc — Architecture
 
-> **Status:** design draft for Phase 7 (no-spawn pivot). The model is
-> frozen: `open-rc serve` is a pure WebSocket relay. The server does
-> not spawn `claude`. The server does not manage `claude`. The server
-> does not know `claude` is a process. The user runs `claude`
-> themselves and brings their own bridge to a WebSocket.
-> **Last revised:** 2026-07-01 — pivot to no-spawn.
+> **Status:** design draft for Phase 7 (pure-relay pivot). The model is
+> frozen: `open-rc serve` is a pure WebSocket relay. It starts no
+> processes and manages no `claude`; it does not even know `claude` is
+> a process. The user runs `claude` themselves and brings their own
+> bridge to a WebSocket.
+> **Last revised:** 2026-07-01 — pivot to a pure relay.
 
 ---
 
@@ -94,9 +94,9 @@ The control plane has three roles. Only one of them is open-rc.
 
 The server does **not**:
 
-- spawn any process (no `Bun.spawn`, no `fork`, no `exec`);
+- start any process of its own;
 - walk `ps`, `lsof`, `/proc`, or any process table;
-- signal any process it didn't spawn (and it didn't spawn any);
+- signal any process (it starts none, so it owns none to signal);
 - persist any per-session state across restarts;
 - know that `claude` is a thing.
 
@@ -168,18 +168,18 @@ might write or use:
 implies opinionated decisions about how `claude` is run, where its
 working directory is, what env vars it needs, what provider
 credentials it has — and the only way to keep that bridge general
-is to make it spawn `claude` for the user, which is forbidden.
+is to make it start `claude` for the user, which is forbidden.
 
 ### 3.4 Why this shape
 
-Putting spawn outside open-rc is deliberate:
+Keeping process startup outside open-rc is deliberate:
 
 - **No take-over.** Take-over requires the server to find a `claude`
   you started in another terminal. Banned. A pure relay never
   finds anything because it never looks.
-- **No spawn in the server.** The server cannot be tempted to "manage"
-  the subprocess — restart it, signal it, walk `ps` to find it —
-  because there is no subprocess in its process tree.
+- **Nothing to manage in the server.** The server cannot be tempted to
+  "manage" a subprocess — restart it, signal it, walk `ps` to find it —
+  because it starts none and none lives in its process tree.
 - **Works on VPS / multi-host.** `claude` lives on the machine that
   has its working directory and credentials. The bridge lives there.
   The server can live anywhere reachable. The browser can live
@@ -190,10 +190,11 @@ Putting spawn outside open-rc is deliberate:
 - **The server's surface doesn't grow.** The server ships exactly
   `serve` and `hub` and stays a pure relay no matter what bridge shape
   the user invents. The only client-side helper shipped is `tui`, a
-  spawn-free `/ws` client. (Spawning helpers `attach-orc` and
-  `attach-tmux` were built and then removed on 2026-07-02 — spawning is
-  out of scope; a spawner may return as a deliberate future feature.
-  The user brings their own bridge to `/agent`.)
+  `/ws` client that starts nothing of its own. (Two helpers that
+  launched subprocesses — `attach-orc` and `attach-tmux` — were built
+  and then removed on 2026-07-02; starting `claude` is out of scope and
+  may return only as a deliberate future feature. The user brings their
+  own bridge to `/agent`.)
 
 ---
 
@@ -417,8 +418,8 @@ user's bridge reads it (if it implements resume).
 There is no process management in `open-rc serve`. This section is
 deliberately short.
 
-- The server does not spawn `claude`.
-- The server does not spawn anything else.
+- The server starts no `claude`.
+- The server starts no other process either.
 - The server does not have a subprocess table.
 - The server does not know how to start, stop, restart, signal, or
   introspect any process.
@@ -483,7 +484,7 @@ requires Anthropic OAuth which we explicitly avoid.
 **Conclusion:** we don't try to redirect the bridge. The user runs
 `claude` in `--print` stream-json mode.
 
-### 8.2 `--bare` mode (evaluated, then rejected — note for any future spawner)
+### 8.2 `--bare` mode (evaluated, then rejected — note for any future bridge)
 
 Discovered from binary strings + verified empirically:
 
@@ -498,7 +499,7 @@ Attractive at first glance (no hook/plugin interference), but the
 auth clause is disqualifying in practice: on a machine that logs in
 via claude.ai OAuth — no `ANTHROPIC_API_KEY` exported — every prompt
 returns "Not logged in · Please run /login" (verified empirically,
-2026-07-02). So a bridge (or any future spawner) should run plain
+2026-07-02). So a bridge (or anything that later starts `claude`) should run plain
 `--print --input-format stream-json --output-format stream-json
 --verbose`: the same public wire format, with auth — and hooks,
 settings, CLAUDE.md — resolved exactly like the user's own
@@ -579,13 +580,13 @@ wait for them to re-register.
 - A SaaS product (anyone self-hosts).
 - **Process discovery of external `claude` instances.** Banned by
   design. The server has no way to find one.
-- **Server-side spawn.** Banned by design. The user runs `claude`.
+- **Server-side process startup.** Banned by design. The user runs `claude`.
 - **Server-side subprocess management.** Banned by design. There is
   no subprocess on the server.
 - **A client tool.** Banned by design. The user builds their own
   bridge.
 - **Browser-side session creation.** Banned by design. The browser
-  shows what bridges are currently connected; it cannot spawn one.
+  shows what bridges are currently connected; it cannot create one.
 
 ---
 
@@ -596,7 +597,7 @@ wait for them to re-register.
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
 | **`open-rc serve`**  | The pure WS relay. The only thing open-rc ships (besides `hub`).   |
 | **Hub**              | `open-rc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. open-rc ships none — you write your own (removed helpers `attach-orc`/`attach-tmux` spawned, which is out of scope). |
+| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. open-rc ships none — you write your own (the `attach-orc`/`attach-tmux` helpers that launched subprocesses were removed as out of scope). |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |

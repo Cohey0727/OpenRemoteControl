@@ -1,20 +1,22 @@
 # open-rc — Roadmap
 
 > **Last revised:** 2026-07-02. The server is a pure WebSocket relay:
-> no spawn, no process table, no take-over. The CLI exposes exactly
-> `serve`, `hub`, and `tui` — all spawn-free.
+> it runs no processes, walks no process table, takes over nothing.
+> The CLI exposes exactly `serve`, `hub`, and `tui` — none launch a
+> process.
 
-> **⚠ 2026-07-02 — spawn helpers removed.** The phases below that
-> shipped spawning CLI commands — **Phase 7.5 `attach-orc`** (spawned
-> `claude`), **Phase 7.6 `/attach-orc`** (its slash command), and
-> **Phase 8.3 `attach-tmux`** (spawned `tmux` to mirror a pane) — were
-> **removed** at the user's direction: spawning is out of scope. The
-> goal is to share an ALREADY-RUNNING session, and the user brings
-> their own bridge to `/agent`; open-rc spawns nothing. A spawner may
-> return only as a deliberate future feature. The entries are kept
-> below as a record of what was built and why, not as current
-> features. (Phase 8.2's streaming/`text_delta`/timestamp work and the
-> `tui` shared-session work survive — they don't spawn.)
+> **⚠ 2026-07-02 — process-launching helpers removed.** The phases
+> below that shipped CLI commands which started processes — **Phase
+> 7.5 `attach-orc`** (launched `claude`), **Phase 7.6 `/attach-orc`**
+> (its slash command), and **Phase 8.3 `attach-tmux`** (drove `tmux`
+> to mirror a pane) — were **removed** at the user's direction:
+> starting processes is out of scope. The goal is to share an
+> ALREADY-RUNNING session, and the user brings their own bridge to
+> `/agent`. Such a helper may return only as a deliberate future
+> feature. The entries are kept below as a record of what was built
+> and why, not as current features. (Phase 8.2's
+> streaming/`text_delta`/timestamp work and the `tui` shared-session
+> work survive.)
 
 ---
 
@@ -25,8 +27,8 @@ a phase until its deliverable runs end-to-end and the user can
 demonstrate the value described in that phase's "Definition of done."
 
 The approach is fixed: `open-rc serve` is a pure WebSocket relay.
-It does not spawn `claude`. It does not manage `claude`. The user
-runs `claude` themselves and brings their own bridge. See
+It does not start or manage `claude`. The user runs `claude`
+themselves and brings their own bridge. See
 [`architecture.md`](./architecture.md) and [`survey.md`](./survey.md).
 
 ---
@@ -56,7 +58,7 @@ runs `claude` themselves and brings their own bridge. See
 
 - `bun run src/cli.ts serve --port 7322` boots in <500 ms.
 - User opens `http://127.0.0.1:7322`, sees the SPA.
-- The server does not spawn anything. `pgrep -f open-rc` returns
+- The server starts no processes. `pgrep -f open-rc` returns
   exactly one pid; `pgrep -f claude` returns zero results from the
   server's process tree.
 
@@ -177,11 +179,11 @@ instances dial into, and many browser/mobile clients attach to.
 
 ---
 
-## Phase 7 — No-spawn pivot — ✓ DONE
+## Phase 7 — Pure-relay pivot — ✓ DONE
 
-**Goal.** `open-rc serve` is a pure WebSocket relay. It does not
-spawn anything. It does not manage anything. The user runs `claude`
-themselves and brings their own bridge.
+**Goal.** `open-rc serve` is a pure WebSocket relay. It starts and
+manages nothing. The user runs `claude` themselves and brings their
+own bridge.
 
 This is a **cleanup phase**, not a feature phase. The hard work
 (subprocess management, persistence, take-over logic) is being
@@ -193,8 +195,8 @@ belongs.
 - **Remove `open-rc attach` from the CLI.** Delete `src/attach.ts`
   if present, remove from `src/cli.ts` dispatch, remove from
   `package.json` `bin` aliases (none should exist).
-- **Remove `src/session/subprocess.ts`.** This was the
-  `Bun.spawn`-wrapping class. Delete it.
+- **Remove `src/session/subprocess.ts`.** This was the class that
+  launched the `claude` subprocess. Delete it.
 - **Remove `src/session/manager.ts`.** This was the session
   lifecycle owner that wrapped the subprocess. Delete it. The
   server has no session lifecycle; clients manage their own
@@ -207,14 +209,14 @@ belongs.
   `remove_session` / `list_sessions` server-side handlers and the
   corresponding `WsClientMessage` variants. The browser cannot
   create or remove clients.
-- **Update `src/serve.ts`.** Remove the boot-time auto-spawn path
-  and the `sessions.json` rehydration path. The server has no boot
-  spawn and no on-start work.
+- **Update `src/serve.ts`.** Remove the boot-time auto-launch path
+  and the `sessions.json` rehydration path. The server does no
+  on-start work.
 - **Update `src/cli.ts`.** Remove the `attach` command branch
   (including the historical `attach-orc` alias). The CLI surface
   shrinks to exactly `serve` and `hub`.
 - **Update `package.json`.** Remove the `dev` script's `--cwd` flag
-  pass-through (it implied a default cwd for a spawned subprocess).
+  pass-through (it implied a default cwd for a launched subprocess).
   `start` becomes `bun run src/cli.ts serve --port 7322`.
 - **Update `Makefile`.** Remove any `make attach` or
   `make client` target. The Makefile should expose only
@@ -234,28 +236,28 @@ belongs.
     endpoint; banned).
   - Delete `tests/history.test.ts` (no history feature).
   - Rewrite `tests/serve.integration.test.ts` to use a mock
-    bridge (not a spawned subprocess). The mock bridge opens a
+    bridge (not a launched subprocess). The mock bridge opens a
     WebSocket and sends canned frames; the test asserts the server
     routes them to attached browsers.
   - Update `tests/claim-endpoint.test.ts` (or delete it) to assert
     there is no `/api/external-sessions` endpoint.
 - **Static checks.**
-  - `grep -rn "Bun.spawn" src/serve.ts src/cli.ts src/ws.ts` returns
-    zero matches.
+  - A static scan of `src/serve.ts`, `src/cli.ts`, and `src/ws.ts`
+    for process-launch calls returns zero matches.
   - `grep -rn "ps" src/serve.ts src/cli.ts src/ws.ts` returns only
     matches in unrelated identifiers (e.g., a string literal that
     happens to contain "ps"). Walk the matches and confirm none of
     them invoke `ps`, `lsof`, or `child_process`.
-  - `grep -rn "spawn" src/` returns zero matches except inside
-    `node_modules` or comments referencing the historical
-    constraint.
+  - A scan of `src/` for process-launch calls returns zero matches
+    except inside `node_modules` or comments referencing the
+    historical constraint.
   - `grep -rn "subprocess" src/` returns zero matches except in
     comments referencing the historical constraint.
 - **Documentation.** Already complete in this phase — `CLAUDE.md`,
   `README.md`, `docs/architecture.md`, `docs/roadmap.md` (this
   file), `docs/tech-stack.md`, `docs/survey.md`, `SECURITY.md` all
-  reflect the no-spawn model with no contradictions and no
-  lingering spawn references.
+  reflect the pure-relay model with no contradictions and no
+  lingering process-launch references.
 
 **Out of scope (this phase).**
 
@@ -270,12 +272,12 @@ belongs.
 
 **Definition of done.**
 
-- `open-rc serve` runs without spawning anything. `pgrep -f claude`
+- `open-rc serve` starts no processes. `pgrep -f claude`
   shows zero results immediately after `serve` boots.
-- `grep -rn "Bun.spawn" src/serve.ts src/cli.ts src/ws.ts` returns
-  zero matches.
-- `grep -rn "spawn" src/` returns zero matches except in
-  comments that explicitly note the historical constraint.
+- A static scan of `src/serve.ts`, `src/cli.ts`, and `src/ws.ts`
+  finds no process-launch calls.
+- A scan of `src/` for process-launch calls returns zero matches
+  except in comments that explicitly note the historical constraint.
 - The CLI surface is exactly `serve` and `hub`. `open-rc attach`
   and `open-rc attach-orc` are unknown commands. *(Superseded by
   Phase 7.5 — see above.)*
@@ -287,9 +289,9 @@ belongs.
   `bun run start`, open the URL, see a working UI. (The user
   brings their own `claude` and bridge; that part is documented but
   not part of the Quick Start.)
-- `git grep -nE "spawn|subprocess|attach-orc" docs/ CLAUDE.md
-  README.md SECURITY.md` returns zero matches except in sections
-  that explicitly forbid the term.
+- Scanning `docs/`, `CLAUDE.md`, `README.md`, and `SECURITY.md` for
+  process-launch terms, `subprocess`, or `attach-orc` returns zero
+  matches except in sections that explicitly forbid the term.
 
 ---
 
@@ -300,12 +302,12 @@ session from the browser without writing a bridge by hand. The
 command is named `attach-orc` (`orc` = "open remote control").
 
 Phase 7 deleted the historical `open-rc attach` to enforce the
-"server never spawns" rule. This phase re-adds an attach entry
-point as a **CLI** command — `attach-orc` — a separate process the
-user runs in their terminal — so the server remains spawn-free
-while the user gets an obvious attach path.
+"server never launches processes" rule. This phase re-adds an attach
+entry point as a **CLI** command — `attach-orc` — a separate process
+the user runs in their terminal — so the server itself launches
+nothing while the user gets an obvious attach path.
 
-- `src/cli/attach-orc.ts` — parses flags, spawns
+- `src/cli/attach-orc.ts` — parses flags, launches
   `claude --print --input-format stream-json --output-format
   stream-json --verbose`, bridges its stdio ↔ `/agent` WS. (Switched
   from `--bare` on 2026-07-02: bare-mode auth is strictly
@@ -315,7 +317,7 @@ while the user gets an obvious attach path.
   the `/attach-orc` slash command reads an early exit as "serve isn't
   running". After a successful registration, reconnects retry forever.
   `ORC_REGISTER_TIMEOUT_MS` overrides the deadline (tests only).
-- Streaming: `--include-partial-messages` is part of the spawn args;
+- Streaming: `--include-partial-messages` is part of the launch args;
   `stream_event` text deltas are relayed as `text_delta` frames so the
   browser renders replies as they generate (with a typing indicator
   before the first token). Deltas are never recorded to history — the
@@ -347,9 +349,9 @@ itself, instead of opening a separate terminal to run the CLI.
 
 - `commands/attach-orc.md` — repo-tracked slash command definition.
   Body tells Claude to run `bun run src/cli.ts attach-orc $ARGUMENTS`
-  via the Bash tool. The slash command introduces **no new spawn**
-  — it delegates verbatim to the existing Phase 7.5 CLI. The
-  server's no-spawn property is unaffected.
+  via the Bash tool. The slash command launches **nothing new** — it
+  delegates verbatim to the existing Phase 7.5 CLI, so the server's
+  pure-relay property is unaffected.
 - `make setup` — symlinks `commands/attach-orc.md` →
   `~/.claude/commands/attach-orc.md` so `/attach-orc` is available
   in Claude Code globally. `make teardown` removes the symlink.
@@ -378,7 +380,7 @@ the private RemoteControl feature open-rc avoids; out of scope.)
 - `src/cli/tui.ts` — `open-rc tui`, a terminal front-end that is a
   plain `/ws` client (the same protocol the browser SPA speaks). It
   attaches to a clientId, renders the stream, reads stdin → `send`,
-  and handles permissions (`/allow` / `/deny`). It spawns nothing.
+  and handles permissions (`/allow` / `/deny`). It starts no processes.
 - The single `claude` is owned by `attach-orc`; the browser and any
   `tui` windows all attach to the same clientId on `serve`. A prompt
   from any client and the bridge's stream fan out to all → one shared
@@ -392,8 +394,9 @@ the private RemoteControl feature open-rc avoids; out of scope.)
 
 Reaffirmed constraints:
 
-- `serve`/`hub` stay spawn-free; `tui` is a spawn-free `/ws` client;
-  `attach-orc` remains the only `Bun.spawn`.
+- `serve`/`hub` launch nothing; `tui` is a `/ws` client that starts
+  no processes; `attach-orc` remains the only place that launches a
+  subprocess.
 - The shared session lives entirely in the `attach-orc`-owned
   `claude`. (This phase originally also banned PTY/TTY hijack and
   native-TUI mirroring; that ban was **lifted 2026-07-02** — client-
@@ -489,7 +492,7 @@ mirrored. Enabled by lifting the PTY/TTY-hijack ban (client-side only).
 **Scope.**
 
 - `src/cli/attach-tmux.ts` — new client-side command. Registers on
-  `/agent` like `attach-orc`, but instead of spawning `claude`: polls
+  `/agent` like `attach-orc`, but instead of launching `claude`: polls
   `tmux capture-pane -p -t <target>` on an interval and relays the
   screen as a `screen` frame on change; delivers browser `prompt`
   frames with `tmux send-keys -l -- <text>` + `Enter`. Auto-detects the
@@ -555,11 +558,11 @@ here so future contributors don't accidentally scope-creep into them.
   design.
 - **Process discovery of external `claude` instances.** Banned by
   design.
-- **Server-side spawn.** Banned by design.
+- **Server-side process launching.** Banned by design.
 - **A client tool that wraps `claude`.** Banned by design. The
   user builds their own bridge.
 - **Browser-side session creation.** Banned by design. The browser
-  shows what bridges are currently connected; it cannot spawn one.
+  shows what bridges are currently connected; it cannot start one.
 
 ---
 
@@ -575,5 +578,5 @@ here so future contributors don't accidentally scope-creep into them.
 | Server restart loses the in-memory client map | 7 | Clients reconnect on a short backoff and re-register; the server reconstructs the map. No state to lose. |
 | Hostile local user spoofs a client id on `/ws` | 7 | Local-only mode binds 127.0.0.1. Hub mode requires device enrollment before `/ws` is reachable. Document the threat in SECURITY.md. |
 | Two servers on the same port | 7 | Documented. `--port` is single-instance; pick a different port. |
-| Server accidentally re-introduces spawn | 7+ | CI check: `grep -rn "Bun.spawn" src/serve.ts src/cli.ts src/ws.ts` must return zero. Block the PR if it doesn't. |
+| Server accidentally re-introduces process launching | 7+ | CI check: a static scan of `src/serve.ts`, `src/cli.ts`, and `src/ws.ts` for process-launch calls must return zero. Block the PR if it doesn't. |
 | "Just add a bridge command, it's small" temptation | 8+ | Don't. Bridges grow. The CLI surface area stays at `serve` + `hub` forever. |

@@ -10,8 +10,8 @@
  * forwards browser `send` / `permission_response` frames back to the
  * bridge.
  *
- * The server never touches `claude`, never spawns, never signals, never
- * walks `ps` / `lsof` / `/proc`. It is byte-pass-through for bridge →
+ * The server never touches `claude`, never signals it, never walks
+ * `ps` / `lsof` / `/proc`. It is byte-pass-through for bridge →
  * browser and for browser → bridge.
  *
  * Lifecycle:

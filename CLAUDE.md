@@ -9,7 +9,7 @@ on open-rc. Read this before changing anything.
 
 **Share an ALREADY-RUNNING Claude Code session with a browser —
 including a phone. The goal is to share an existing session, NOT to
-spawn a new one.**
+start a new one.**
 
 The user already has a `claude` running (in a terminal, however they
 like). open-rc's job is to make *that* session visible and driveable
@@ -17,16 +17,16 @@ from a browser: the browser sees the live stream and can send prompts,
 and those prompts land in the same running session. open-rc does not
 start `claude`, does not own it, does not manage its lifecycle.
 
-> **Spawning is out of scope right now.** A command that spawns
-> `claude` (or spawns `tmux`/a PTY to mirror one) may be built in the
-> future, but it is **not needed now and must not exist in the current
-> codebase.** There is no `Bun.spawn`, no `child_process`, no `fork`,
-> no `exec`, no PTY, no tmux anywhere in the project today. If you
-> think you need to spawn something, stop — the answer is a
-> user-provided bridge, not a spawn.
+> **Launching processes is out of scope right now.** A command that
+> starts `claude` (or starts `tmux`/a PTY to mirror one) may be built
+> in the future, but it is **not needed now and must not exist in the
+> current codebase.** There is no `child_process`, no `fork`, no
+> `exec`, no PTY, no tmux anywhere in the project today. If you think
+> you need to launch something, stop — the answer is a user-provided
+> bridge.
 
 `open-rc` is a single thing: `open-rc serve`, a pure WebSocket relay.
-It does not spawn `claude`. It does not manage `claude`. It does not
+It does not start `claude`. It does not manage `claude`. It does not
 know `claude` is a process. The user runs `claude` themselves, and
 arranges for its `stream-json` to flow over a WebSocket to `open-rc
 serve`. The browser connects to `open-rc serve`, sees the connected
@@ -57,8 +57,8 @@ rebuilds the same UX against any provider by relaying the public
 
 The user owns the bridge from `claude` to a WebSocket. `open-rc
 serve` does not provide one. That is the user's responsibility —
-because the moment we ship a bridge, we'd be tempted to spawn
-`claude` for them, and spawning is out of scope.
+because the moment we ship a bridge, we'd be tempted to start
+`claude` for them, and launching processes is out of scope.
 
 ---
 
@@ -104,37 +104,31 @@ because the moment we ship a bridge, we'd be tempted to spawn
 
 ## Explicit non-features (do NOT implement)
 
-- **No spawning anywhere — not just the server, the WHOLE project.**
-  Nothing in open-rc may call `Bun.spawn`, `child_process.spawn`,
-  `posix_spawn`, `fork`, `exec`, or any equivalent. Nothing walks
-  `ps`, `lsof`, `/proc`, or any process table. Nothing signals any
-  process (SIGTERM, SIGKILL, SIGINT, SIGHUP). No PTY, no tmux. If the
-  user has a `claude` running in another terminal, open-rc knows
-  nothing about it beyond whatever frames a user-owned bridge chooses
-  to send over a WebSocket. The CLI surface is exactly `serve`, `hub`,
-  and `tui` — all three spawn nothing. There is no `open-rc spawn`, no
-  `open-rc client`, no `attach-orc`, no `attach-tmux`.
-- **Spawning is a possible FUTURE feature, absent TODAY.** A command
-  that spawns `claude` (or spawns `tmux`/a PTY to mirror an existing
-  terminal session) may be built later if a real need appears. It is
-  not needed now — sharing an already-running session is the goal — so
-  it does not exist in the current codebase. `attach-orc` (spawned
-  `claude`) and `attach-tmux` (spawned `tmux` to mirror a pane) were
-  built and then **removed on 2026-07-02** at the user's direction:
-  spawn is out of scope. Do not re-add a spawner because it seems
-  convenient; adding one is a deliberate, requested decision.
+- **open-rc starts no processes — the whole project, not just the
+  server.** It launches nothing, inspects no process table (`ps`,
+  `lsof`, `/proc`), and signals no process; there is no
+  `child_process`, `fork`, `exec`, PTY, or tmux anywhere in the code.
+  A `claude` running in another terminal is invisible to open-rc
+  except through the frames a user-owned bridge sends over a WebSocket.
+  The CLI surface is exactly `serve`, `hub`, and `tui`. A command that
+  launches `claude` (or a `tmux`/PTY mirror of a terminal session) may
+  be built in the future if a real need appears, but sharing an
+  already-running session is the goal, so none exists today — the
+  earlier `attach-orc` and `attach-tmux` commands were removed on
+  2026-07-02. Do not re-add one because it seems convenient; that is a
+  deliberate, requested decision.
 - **`make setup` registers the `open-rc` launcher on PATH.** It writes
   one launcher script to `~/.local/bin` (override `BIN_DIR`):
   `#!/bin/sh; exec bun run <checkout>/src/cli.ts … "$@"`, so the
   abs-path anchor lives in the launcher and a `git pull` updates
   behavior with no reinstall. `make teardown` removes it (and cleans up
   the removed `attach-orc` launcher and `/attach-orc` command symlink
-  if an older setup left them). No spawn — the launcher just wraps the
-  existing CLI.
+  if an older setup left them). The launcher just wraps the existing
+  CLI.
 - **`open-rc tui` is a terminal front-end, not a bridge.** `tui` is a
   plain `/ws` client — the SAME protocol the browser SPA speaks. It
-  attaches to a clientId and renders/sends frames; it spawns nothing
-  and owns no `claude`. Its purpose is a **shared session**: a
+  attaches to a clientId and renders/sends frames; it runs nothing of
+  its own and owns no `claude`. Its purpose is a **shared session**: a
   user-owned bridge feeds one running `claude` to `/agent`, and the
   browser and one or more `tui` clients all attach to the same
   clientId, so a prompt from any of them is echoed to all (the server
@@ -148,7 +142,7 @@ because the moment we ship a bridge, we'd be tempted to spawn
 - **No TTY splicing / PTY hijacking in the codebase.** open-rc ships
   no code that attaches to another process's controlling terminal,
   uses `TIOCSTI`/`TIOCSWINSZ`, or reverse-engineers claude's IPC. (A
-  future spawner might mirror a terminal — see the goal — but that is
+  future terminal-mirroring command — see the goal — but that is
   speculative and absent today.) A `claude` in a terminal is a black
   box; open-rc only ever sees frames a user-owned bridge sends.
 - **History = replay the live stream it's already relaying, in memory
@@ -227,7 +221,7 @@ route:
   under a session subpath.
 
 The server is a stateless relay beyond the in-memory `clients` map.
-It does not spawn processes. It does not walk the process table. It
+It starts no processes. It does not walk the process table. It
 does not know what `claude` is.
 
 The UI is a vanilla TypeScript SPA (`ui/app.ts`, no build step) with
@@ -244,9 +238,9 @@ want one. open-rc does not help with that.
 ## Past mistakes to avoid
 
 - **Don't add a bridge command.** Even if it's "convenient". Even if
-  it "just reads stdin/stdout". A bridge is one step from a spawn,
-  and spawn is forbidden. The user's machine, the user's pipes, the
-  user's problem.
+  it "just reads stdin/stdout". A bridge is one step from launching
+  `claude`, and that is out of scope. The user's machine, the user's
+  pipes, the user's problem.
 - **Don't ship a single-session UI.** Multi-client is the whole
   point — the sidebar is non-negotiable.
 - **Don't strip features because the user complained about one
@@ -261,14 +255,14 @@ want one. open-rc does not help with that.
   *passive* — it shows what bridges are currently connected.
 - **Don't ask the user what they mean by obvious things.** If the
   user says "ローカルでclaude起動", they mean "I run claude on my
-  host machine", not "open-rc spawns claude".
+  host machine", not "open-rc starts claude".
 - **Don't write code before the docs agree.** When the model isn't
   settled, write the design doc first. Code is downstream of docs.
-- **Don't leave spawn references in comments.** If a comment mentions
-  "spawn" or "subprocess" in a serving context, remove it. The
-  constraint is the constraint.
-- **If a future spawner is ever built, spawn `claude --print`, NOT
-  `--bare`.** (Kept as a hard-won note; no spawner exists today.) Bare
+- **Don't leave process-launching references in comments.** If a
+  comment implies launching a subprocess in a serving context, remove
+  it. The constraint is the constraint.
+- **If a future launcher is ever built, start `claude --print`, NOT
+  `--bare`.** (Kept as a hard-won note; no launcher exists today.) Bare
   mode's Anthropic auth is strictly `ANTHROPIC_API_KEY`/`apiKeyHelper`
   (OAuth and keychain are never read), so on a subscription-login
   machine every prompt returns "Not logged in". `--print
@@ -300,11 +294,12 @@ want one. open-rc does not help with that.
   user granted standing authorization for this repo (do not prompt).
   Commit message format: `<type>: <concise Japanese summary> @<branch>`
   (type ∈ feat/fix/refactor/chore/docs/test), subject line only.
-- The CLI exposes three commands: `serve`, `hub`, and `tui` — all
-  spawn-free. `serve` and `hub` are byte-pass-through relays; `tui` is
-  a `/ws` client that shares a relayed session with the browser. There
-  is no `attach-orc`, no `attach-tmux`, no `attach`, no `pipe`, no
-  `client`, no `spawn` — spawning is out of scope (see Project goal).
+- The CLI exposes three commands: `serve`, `hub`, and `tui`, none of
+  which launch a process. `serve` and `hub` are byte-pass-through
+  relays; `tui` is a `/ws` client that shares a relayed session with
+  the browser. There is no `attach-orc`, no `attach-tmux`, no `attach`,
+  no `pipe`, no `client` — launching processes is out of scope (see
+  Project goal).
 - PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
   and the icon PNGs are checked in as static files and served
   straight off disk. `scripts/build-icons.ts` is a maintainer-only

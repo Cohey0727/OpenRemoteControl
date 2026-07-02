@@ -1,7 +1,7 @@
 {
   "name": "open-rc",
   "version": "0.1.0",
-  "description": "Pure WebSocket relay for Claude Code RemoteControl — open, self-hostable, provider-agnostic. No spawn.",
+  "description": "Pure WebSocket relay for Claude Code RemoteControl — open, self-hostable, provider-agnostic.",
   "type": "module",
   "license": "MIT",
   "bin": {

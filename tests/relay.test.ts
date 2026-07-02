@@ -1,6 +1,6 @@
 /**
  * Relay integration test — proves the server is a pure WebSocket relay
- * with no spawn capability.
+ * that starts no processes of its own.
  *
  * Test plan:
  *   1. Boot `serve()` with push disabled, on a random port.

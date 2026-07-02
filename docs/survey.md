@@ -43,7 +43,7 @@ single-purpose launchers) were not inspected.
 > — [Eric-Song-Nop/mobvibe](https://github.com/Eric-Song-Nop/mobvibe)
 
 **Approach.** mobvibe does not drive vanilla Claude Code at all. It
-spawns `claude-code-acp` (Zed's adapter) and speaks the Agent Client
+launches `claude-code-acp` (Zed's adapter) and speaks the Agent Client
 Protocol over the child's stdio. The daemon (Bun) wraps that stdio with
 `ndJsonStream` and exchanges `initialize / newSession / prompt / cancel`
 ACP-RPC frames. The CLI↔gateway transport is **Socket.io** (not raw
@@ -99,7 +99,7 @@ compatibility, or if Anthropic ships a first-party ACP adapter.
 > Reference implementation for the approach we adopted.
 > — [zhdzh12138/pocket-claude](https://github.com/zhdzh12138/pocket-claude)
 
-**Approach.** Subprocess. Spawns `claude --bare --output-format
+**Approach.** Subprocess. Launches `claude --bare --output-format
 stream-json` per session; pipes NDJSON events on stdout back to the
 browser over WebSocket. No PTY, no Anthropic bridge, no third-party
 adapter.
@@ -204,7 +204,7 @@ Anthropic's infrastructure.
 > control local claude code from mobile/web)
 > — [permissionnine9/claude-code-remote-control](https://github.com/permissionnine9/claude-code-remote-control)
 
-**Approach.** Spawns `claude` inside a pseudo-terminal via
+**Approach.** Launches `claude` inside a pseudo-terminal via
 `@lydell/node-pty`, treats it as a TTY. Every PTY chunk is broadcast
 raw to the browser, which renders it with xterm.js. A regex-based
 parser also watches for `[y/n]` permission prompts and synthesizes
@@ -270,7 +270,7 @@ exact prompt text.
 > sessions from any browser"
 > — [barjakuzu/claude-rc-launcher](https://github.com/barjakuzu/claude-rc-launcher)
 
-**Approach.** Spawns `claude` inside a detached tmux session. Waits
+**Approach.** Launches `claude` inside a detached tmux session. Waits
 for the `❯` prompt, types `/remote-control`, waits for the literal
 status string `"Remote Control active"`, parses the URL via regex
 `https://claude\.ai/code/session_[^\s]+`, and hands the user off to
@@ -327,7 +327,7 @@ RemoteControl capability for non-Anthropic providers.
 
 **Approach.** A Claude Code *plugin* (POSIX shell + PowerShell + one
 Python file). Wraps the official `claude --remote-control` flag —
-nothing more. Spawns it inside tmux on Unix, ConPTY on Windows.
+nothing more. Launches it inside tmux on Unix, ConPTY on Windows.
 Provides a keystroke-inbox helper so that `/`-prefixed commands
 (`/clear`, `/compact`, `/model haiku`) can be sent from outside the
 TUI.
@@ -415,15 +415,15 @@ direction but requires confirmation.
 **Adopt (b) — `claude --bare --output-format stream-json` subprocess,
 pocket-claude style.**
 
-> **Update (2026-07-02):** this "adopt a spawning subprocess" decision
-> was ultimately reversed. Helpers that spawned (`attach-orc` spawning
-> `claude`; `attach-tmux` spawning `tmux` to mirror a pane) were built
-> and then removed the same day — spawning is out of scope; open-rc
-> ships a pure relay and the user brings their own bridge. The auth
-> note still stands for any future spawner: use `--print`, not
-> `--bare` (bare authenticates only via `ANTHROPIC_API_KEY`, so
-> OAuth-login machines get "Not logged in"). See
-> [`architecture.md`](./architecture.md) §8.2.
+> **Update (2026-07-02):** this "adopt a subprocess" decision was
+> ultimately reversed. Helpers that launched subprocesses (`attach-orc`
+> starting `claude`; `attach-tmux` starting `tmux` to mirror a pane)
+> were built and then removed the same day — launching subprocesses is
+> out of scope; open-rc ships a pure relay and the user brings their
+> own bridge. The auth note still stands for any future subprocess
+> launcher: use `--print`, not `--bare` (bare authenticates only via
+> `ANTHROPIC_API_KEY`, so OAuth-login machines get "Not logged in").
+> See [`architecture.md`](./architecture.md) §8.2.
 
 Concrete reasons:
 
@@ -444,16 +444,16 @@ ACP approach buys us multi-agent support for free. Not now.
 
 **Reject (a), (a'), (d).** Documented above.
 
-### No-spawn pivot (Phase 7 addendum)
+### Pure-relay pivot (Phase 7 addendum)
 
-Earlier versions of `open-rc` shipped a server that spawned one
+Earlier versions of `open-rc` shipped a server that launched one
 `claude` subprocess per session (`open-rc attach` / `attach-orc`,
 plus a server-side `SessionManager`). That model has been removed in
 favor of a pure WebSocket relay:
 
-- **`open-rc serve` does not spawn anything.** No `Bun.spawn`, no
-  `fork`, no `exec`. The server's process table is unchanged after
-  `serve` boots.
+- **`open-rc serve` starts no processes.** No `fork`, no `exec`, no
+  process-creation calls of any kind. The server's process table is
+  unchanged after `serve` boots.
 - **`open-rc serve` does not manage anything.** No session lifecycle,
   no disk persistence, no `sessions.json` (only a bounded in-memory
   replay buffer per connected client, dropped on disconnect).
@@ -467,8 +467,8 @@ Why this pivot:
   open-rc-managed subprocess) is permanently banned. Take-over
   requires the server to *find* `claude` processes, which requires
   walking `ps`/`lsof`/`/proc`. The cleanest way to keep that
-  temptation off the table is to ship a server that has no spawn
-  capability at all.
+  temptation off the table is to ship a server that cannot start
+  processes at all.
 - The relay model makes multi-host trivial: `claude` lives on the
   machine that has its working directory and credentials; the
   user's bridge lives there; the server can live anywhere reachable;
@@ -484,9 +484,9 @@ mirroring.
 > **Update (2026-07-02):** a `attach-tmux` command that mirrored an
 > existing tmux `claude` via `capture-pane`/`send-keys` (relaying the
 > screen as `screen` frames) was briefly built and then removed the
-> same day — it spawned `tmux`, and spawning is out of scope. open-rc
-> ships a pure relay; the user brings their own bridge. The server
-> never touches a terminal.
+> same day — it started `tmux`, and launching processes is out of
+> scope. open-rc ships a pure relay; the user brings their own bridge.
+> The server never touches a terminal.
 
 ---
 

@@ -317,11 +317,9 @@ configs to maintain), `dprint` (good, less ecosystem).
 
 ## Process management
 
-**Nothing in open-rc manages processes.** No command spawns, forks,
-execs, attaches, signals, or introspects any other process. There is
-no `Bun.spawn`, no `child_process`, no PTY, no tmux anywhere in the
-project — `grep -rE 'Bun\.spawn|child_process|posix_spawn|fork|exec'
-src/` is empty. `serve`, `hub`, and `tui` are the whole CLI, and each
+**Nothing in open-rc starts, attaches to, signals, or introspects
+another process.** No `child_process`, no PTY, no tmux anywhere in the
+project. `serve`, `hub`, and `tui` are the whole CLI, and each
 process's tree contains only itself.
 
 If the user wants a `claude` running, they run it themselves. If they
@@ -329,13 +327,12 @@ want it bridged to open-rc, they write their own bridge that pipes
 `claude`'s stream-json to `/agent` — see `docs/architecture.md` §3.3.
 open-rc ships no bridge.
 
-> **Spawning is out of scope, not impossible in principle.** A future
-> command that spawns `claude` (or spawns `tmux`/a PTY to mirror a
-> terminal) could be added if a real need appears. Two such helpers —
-> `attach-orc` (spawned `claude`) and `attach-tmux` (spawned `tmux`) —
-> were built and then **removed on 2026-07-02**: sharing an existing
-> session is the goal, and neither is needed for that. Re-adding a
-> spawner is a deliberate decision, never a convenience reach.
+> **Out of scope, not impossible in principle.** A future command that
+> starts `claude` (or a `tmux`/PTY to mirror a terminal) could be added
+> if a real need appears. Two such helpers — `attach-orc` and
+> `attach-tmux` — were built and then **removed on 2026-07-02**: sharing
+> an existing session is the goal, and neither is needed for it.
+> Re-adding one is a deliberate decision, never a convenience reach.
 
 ### Launcher bootstrap
 

@@ -1146,7 +1146,7 @@ function buildApp(): HTMLElement {
 
   // ----- Modal -----
   // `display: contents` so this wrapper never becomes a grid item of
-  // `#app` (an extra grid item would spawn a phantom row and steal
+  // `#app` (an extra grid item would create a phantom row and steal
   // height from the sidebar). Its only child, the fixed-position
   // backdrop, is positioned out of flow anyway.
   const modalRoot = h('div', { style: 'display: contents' });
