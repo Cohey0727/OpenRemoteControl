@@ -2,21 +2,24 @@
 
 > **Last revised:** 2026-07-02. The server is a pure WebSocket relay:
 > it runs no processes, walks no process table, takes over nothing.
-> The CLI exposes exactly `serve`, `hub`, and `tui` — none launch a
-> process.
+> The CLI exposes `serve`, `hub`, `tui`, `attach-orc`, and `hook` —
+> none launch a process.
 
 > **⚠ 2026-07-02 — process-launching helpers removed.** The phases
 > below that shipped CLI commands which started processes — **Phase
 > 7.5 `attach-orc`** (launched `claude`), **Phase 7.6 `/attach-orc`**
 > (its slash command), and **Phase 8.3 `attach-tmux`** (drove `tmux`
 > to mirror a pane) — were **removed** at the user's direction:
-> starting processes is out of scope. The goal is to share an
-> ALREADY-RUNNING session, and the user brings their own bridge to
-> `/agent`. Such a helper may return only as a deliberate future
-> feature. The entries are kept below as a record of what was built
-> and why, not as current features. (Phase 8.2's
-> streaming/`text_delta`/timestamp work and the `tui` shared-session
-> work survive.)
+> starting processes is out of scope. The entries are kept below as a
+> record of what was built and why, not as current features. (Phase
+> 8.2's streaming/`text_delta`/timestamp work and the `tui`
+> shared-session work survive.)
+>
+> **Phase 8.4 (same day) reintroduced the `attach-orc` NAME with the
+> opposite mechanics**: it shares the ALREADY-RUNNING session it is
+> invoked from, by tailing the session's own transcript and delivering
+> browser prompts through Claude Code hooks — zero spawning. See
+> Phase 8.4 below; it is the current, shipped design.
 
 ---
 
@@ -539,6 +542,53 @@ Candidate items (prioritized at the start of the phase):
   `websocat` wrapper, tmux capture-pane). Not part of the CLI;
   documented but optional.
 
+### Phase 8.4 — Shared session: `/attach-orc` transcript bridge + hook delivery — ✓ DONE (2026-07-02)
+
+**Goal (verbatim user requirement).** ブラウザとCLIのセッションを完全に
+共有しろ: `/attach-orc` したセッションがサイドバーに表示され、クリックで
+履歴が見えてメッセージを送信でき、CLIからもブラウザからも閲覧・送信できる。
+**spawnではない** — the session being shared is the one the user is
+already sitting in.
+
+**Mechanics (zero spawning, kept forever).**
+
+- `open-rc attach-orc` (`src/cli/attach-orc.ts`) resolves the newest
+  transcript JSONL for its cwd (`src/transcript/locate.ts` — the
+  session that just ran `/attach-orc` modified its transcript last),
+  registers on `/agent` with **clientId = session id** (stable deep
+  links), replays the transcript as history (translate:
+  `src/transcript/translate.ts`; capped at `MAX_REPLAY_FRAMES`), then
+  tails it live (`src/transcript/tail.ts`, 300 ms polling).
+- Browser/tui → session: `prompt` frames are appended to
+  `~/.open-rc/attach/<sessionId>/queue.ndjson`
+  (`src/attach/state.ts`). The Claude Code hooks
+  (`src/cli/attach-hooks.ts`, installed by `make setup` via
+  `scripts/install-hooks.ts`) deliver them: **Stop** touches a marker
+  (→ bridge sends `done`) and drains the queue, answering
+  `{"decision":"block","reason":<messages>}` so the session responds;
+  while `attached.count > 0` it lingers (default 45 s,
+  `ORC_STOP_LINGER_MS`) polling for late prompts. **UserPromptSubmit**
+  attaches queued prompts as `additionalContext`. **SessionEnd**
+  touches the end marker; the bridge unregisters and exits.
+- Protocol additions: bridge → server `user` frame (transcript-replayed
+  CLI prompts; `[open-rc]`-marked injections are filtered to avoid
+  double render), server → bridge `attached { count }`.
+- Hooks are instant no-ops without a fresh bridge heartbeat
+  (`bridge.json`, 15 s cadence / 45 s staleness), so unshared sessions
+  pay nothing.
+
+**Definition of done.** ✓ `make setup` installs launcher + hooks +
+command; `/attach-orc` in a running session → sidebar row (session id)
+→ click → full history → browser send → session responds at the next
+hook moment → response visible in browser, terminal, and `tui`.
+Integration-tested in `tests/attach-orc-bridge.test.ts` (in-process
+serve + fixture transcript; no child processes in the test suite).
+
+**Accepted limitation.** A browser message sent while the session is
+idle past the linger window waits for the next session activity (next
+CLI prompt or turn). Waking an idle interactive `claude` would require
+PTY/tmux/stdin tricks — permanently banned.
+
 ---
 
 ## Things we explicitly will not do
@@ -559,8 +609,10 @@ here so future contributors don't accidentally scope-creep into them.
 - **Process discovery of external `claude` instances.** Banned by
   design.
 - **Server-side process launching.** Banned by design.
-- **A client tool that wraps `claude`.** Banned by design. The
-  user builds their own bridge.
+- **A client tool that wraps `claude` (owns its stdio / lifecycle).**
+  Banned by design. `attach-orc` shares a session from the outside
+  (transcript + hooks); anything that needs to own the process is a
+  user-built bridge.
 - **Browser-side session creation.** Banned by design. The browser
   shows what bridges are currently connected; it cannot start one.
 
@@ -579,4 +631,6 @@ here so future contributors don't accidentally scope-creep into them.
 | Hostile local user spoofs a client id on `/ws` | 7 | Local-only mode binds 127.0.0.1. Hub mode requires device enrollment before `/ws` is reachable. Document the threat in SECURITY.md. |
 | Two servers on the same port | 7 | Documented. `--port` is single-instance; pick a different port. |
 | Server accidentally re-introduces process launching | 7+ | CI check: a static scan of `src/serve.ts`, `src/cli.ts`, and `src/ws.ts` for process-launch calls must return zero. Block the PR if it doesn't. |
-| "Just add a bridge command, it's small" temptation | 8+ | Don't. Bridges grow. The CLI surface area stays at `serve` + `hub` forever. |
+| "Just add a bridge command, it's small" temptation | 8+ | The one sanctioned bridge is `attach-orc`, and it is structurally incapable of spawning (no child_process anywhere). Any new helper must keep that property. |
+| Stop-hook linger blocks the terminal after each turn | 8.4 | Linger runs only while a viewer is attached, defaults to 45 s, is env-tunable (`ORC_STOP_LINGER_MS`), and Esc skips it. |
+| Browser message to an idle session past the linger window | 8.4 | Documented, accepted: delivered at the next session activity. Never "fixed" with PTY/tmux. |

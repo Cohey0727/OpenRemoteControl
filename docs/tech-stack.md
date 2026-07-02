@@ -319,20 +319,21 @@ configs to maintain), `dprint` (good, less ecosystem).
 
 **Nothing in open-rc starts, attaches to, signals, or introspects
 another process.** No `child_process`, no PTY, no tmux anywhere in the
-project. `serve`, `hub`, and `tui` are the whole CLI, and each
-process's tree contains only itself.
+project. `serve`, `hub`, `tui`, `attach-orc`, and `hook` are the whole
+CLI, and each process's tree contains only itself.
 
-If the user wants a `claude` running, they run it themselves. If they
-want it bridged to open-rc, they write their own bridge that pipes
-`claude`'s stream-json to `/agent` — see `docs/architecture.md` §3.3.
-open-rc ships no bridge.
+If the user wants a `claude` running, they run it themselves. To share
+that session with the browser they either type `/attach-orc` inside it
+(first-party: the bridge tails the session's own transcript JSONL and
+the Claude Code hooks deliver browser prompts back — file I/O and
+WebSockets only, see `docs/architecture.md` §3.1) or write their own
+bridge that pipes `claude`'s stream-json to `/agent`.
 
-> **Out of scope, not impossible in principle.** A future command that
-> starts `claude` (or a `tmux`/PTY to mirror a terminal) could be added
-> if a real need appears. Two such helpers — `attach-orc` and
-> `attach-tmux` — were built and then **removed on 2026-07-02**: sharing
-> an existing session is the goal, and neither is needed for it.
-> Re-adding one is a deliberate decision, never a convenience reach.
+> **Spawning remains out of scope.** The original `attach-orc`
+> (spawned `claude --print`) and `attach-tmux` (drove tmux) were
+> **removed on 2026-07-02**; the same-day `/attach-orc` requirement
+> was implemented spawn-free. Re-adding process launching is a
+> deliberate decision, never a convenience reach.
 
 ### Launcher bootstrap
 
@@ -340,9 +341,11 @@ open-rc ships no bridge.
 `~/.local/bin` (override with `BIN_DIR=`). It is a two-line wrapper
 (`exec bun run <checkout>/src/cli.ts … "$@"`), so the absolute-path
 anchor lives in the launcher and a `git pull` updates behavior with no
-rebuild. `make teardown` removes it (and cleans up the removed
-`attach-orc` launcher / `/attach-orc` command symlink if an older
-setup left them behind).
+rebuild. It then runs `scripts/install-hooks.ts`, which merges the
+Stop / UserPromptSubmit / SessionEnd hook entries into
+`~/.claude/settings.json` (idempotent; user hooks preserved) and
+symlinks `commands/attach-orc.md` into `~/.claude/commands/`.
+`make teardown` reverses all of it.
 
 ---
 

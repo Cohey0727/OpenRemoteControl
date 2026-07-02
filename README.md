@@ -56,19 +56,68 @@ That's the entire server. `open-rc serve` is a pure WebSocket relay.
 ## Drive a `claude` session from your browser
 
 open-rc **shares an already-running `claude` — it never starts one.**
-You run `claude` yourself in stream-json mode and pipe its output to
-the relay's `/agent` WebSocket; the browser attaches and drives it.
+There are two ways to feed the relay:
 
-Run `make setup` once to put the `open-rc` launcher on your PATH, then
-start the relay:
+1. **`/attach-orc` (recommended).** Share the interactive Claude Code
+   session you are already sitting in — history, live stream, and
+   two-way prompts — with one slash command. No spawning: the bridge
+   reads the session's own transcript and the Claude Code hooks carry
+   browser prompts back in.
+2. **Bring your own bridge.** Run `claude` in stream-json mode
+   yourself and pipe its stdio to the relay's `/agent` WebSocket.
+
+Run `make setup` once; it installs the `open-rc` launcher on your
+PATH, the open-rc Claude Code hooks, and the `/attach-orc` command:
 
 ```bash
-make setup          # writes ~/.local/bin/open-rc (override BIN_DIR)
+make setup          # launcher + hooks + /attach-orc (override BIN_DIR)
 open-rc serve       # → http://127.0.0.1:7322
 ```
 
 If `~/.local/bin` isn't on your PATH, `make setup` prints the one-line
-fix. `make teardown` removes the launcher again.
+fix. `make teardown` removes everything again.
+
+### Share the session you are already in (`/attach-orc`)
+
+Inside any running Claude Code session, type:
+
+```
+/attach-orc
+```
+
+The session appears in the browser sidebar within a second or two,
+with its full conversation history. Click it: you see everything that
+already happened, live updates as the session works, and a composer
+that sends prompts into that same session. The terminal keeps working
+exactly as before — prompts typed there show up in the browser, and
+vice versa. `open-rc tui` attaches to the same session for a shared
+terminal view.
+
+How it works, in one breath: `/attach-orc` starts `open-rc attach-orc`
+in the background, which locates the session's own transcript JSONL
+(the file Claude Code is already writing under `~/.claude/projects/…`),
+replays it to `serve` as history, and tails it live — that is the
+session→browser direction. Browser prompts are queued to a per-session
+file, and the open-rc **hooks** (installed by `make setup`) deliver
+them into the running session: the Stop hook picks them up at every
+turn end, and while a browser/tui viewer is attached it keeps a short
+listening window open (default 45 s, tune with `ORC_STOP_LINGER_MS`;
+Esc skips it) so a browser reply lands immediately. A message sent
+while the session has been idle past that window is delivered the next
+time the session wakes up (your next prompt in either place).
+
+Nothing is spawned anywhere in this path: no `claude` subprocess, no
+PTY, no tmux. The bridge only reads a file the session already writes
+and exchanges frames with `serve`; the hooks only answer the hook
+callbacks Claude Code itself makes.
+
+```
+you type in the terminal ──► transcript JSONL ──► attach-orc ──► serve ──► browser/tui
+browser sends a prompt   ──► serve ──► attach-orc ──► queue file ──► Stop hook ──► session
+```
+
+Stop sharing by killing the background bridge task (or just end the
+session — the SessionEnd hook tells the bridge to unregister).
 
 ### Bring your own bridge
 
@@ -226,14 +275,29 @@ open-rc tui
                            else ws://127.0.0.1:7322/ws)
   --client-id        <s>   Session to attach to (auto-picks when omitted)
   # env: ORC_BASE_URL   base URL of a remote serve; /ws is derived from it
+
+open-rc attach-orc          # normally started by the /attach-orc command
+  --server           <u>   /agent WebSocket URL (default from ORC_BASE_URL,
+                           else ws://127.0.0.1:7322/agent)
+  --label            <s>   Sidebar label (default user@host)
+  --cwd              <p>   Project dir whose current session to share
+                           (default: where you run it)
+  --transcript       <p>   Explicit transcript JSONL (skips discovery)
+  --client-id        <s>   Explicit clientId (default: the session id)
+  # env: ORC_BASE_URL      base URL of a remote serve
+
+open-rc hook <stop|prompt|end>   # internal: Claude Code hook handlers,
+                                 # wired into ~/.claude/settings.json by
+                                 # make setup; hook JSON arrives on stdin
+  # env: ORC_STOP_LINGER_MS  post-turn listening window (default 45000)
 ```
 
-That is the entire CLI surface. There is no `open-rc client`, no
-`attach-orc`, no `attach-tmux`.
+That is the entire CLI surface. There is no `open-rc client` and no
+`attach-tmux`.
 
-> Note: three commands total — `serve` and `hub` (relays) and `tui`
-> (a `/ws` client that shares a relayed session with the browser). You
-> bring your own bridge to `/agent`.
+> Note: none of these launch a process. `serve`/`hub` are relays,
+> `tui` is a `/ws` client, `attach-orc` reads the transcript your own
+> `claude` writes, and `hook` handlers exchange files with the bridge.
 
 ---
 
@@ -289,10 +353,18 @@ sidebar repopulates.
 
 ```
 src/
-├── cli.ts                       # arg parsing, command dispatch (serve, hub, tui)
+├── cli.ts                       # arg parsing, command dispatch (serve, hub, tui, attach-orc, hook)
 ├── cli/
 │   ├── flags.ts                 # shared --k=v / kebab→camel flag parser
-│   └── tui.ts                   # terminal /ws client — shares a session with the browser
+│   ├── tui.ts                   # terminal /ws client — shares a session with the browser
+│   ├── attach-orc.ts            # transcript bridge — shares a running session, spawns nothing
+│   └── attach-hooks.ts          # `open-rc hook stop|prompt|end` Claude Code hook handlers
+├── transcript/
+│   ├── locate.ts                # cwd → ~/.claude/projects/<munged>/<newest>.jsonl
+│   ├── translate.ts             # transcript JSONL entry → BridgeFrame
+│   └── tail.ts                  # offset-tracked line tailer (polling)
+├── attach/
+│   └── state.ts                 # bridge ⇄ hook filesystem contract (~/.open-rc/attach)
 ├── serve.ts                     # Bun.serve entry: HTTP + WS(/ws) + WS(/agent) + static UI
 ├── ws.ts                        # WS handlers on /ws (browsers) and /agent (bridges)
 ├── session/
@@ -322,17 +394,21 @@ ui/
 └── app.ts                       # vanilla TypeScript SPA with ~30-line signal implementation
                                   # (transpiled on the fly by Bun, no build step)
 
+commands/
+└── attach-orc.md                # the /attach-orc slash command (symlinked by make setup)
+
 scripts/
 ├── build.ts                     # DISTRIBUTION ONLY — cross-compile to linux/darwin/windows
-└── build-icons.ts               # Rasterise ui/icon.svg into the PWA + iOS PNGs (dev-only)
+├── build-icons.ts               # Rasterise ui/icon.svg into the PWA + iOS PNGs (dev-only)
+└── install-hooks.ts             # make setup helper: hooks + /attach-orc into ~/.claude
 ```
 
 tests/                           # unit + integration (no e2e yet)
 
 Note what is **not** in `src/`: there is no `subprocess.ts`, no
-`manager.ts`, no `attach-orc.ts`, no `attach-tmux.ts`. `claude` is
-run by the user and reaches the relay only through a user-provided
-bridge on `/agent`.
+`manager.ts`, no `attach-tmux.ts`, no `child_process`, no PTY.
+`claude` is run by the user; `attach-orc` shares it by reading the
+transcript it already writes, never by owning its stdio.
 
 > **Build step is optional.** `scripts/build.ts` exists to bundle
 > Bun + the source into a single binary for users who do not have
@@ -351,14 +427,17 @@ documented** `--input-format stream-json --output-format stream-json
 output over WS. Same UX, no protocol chasing. See
 [`docs/survey.md`](./docs/survey.md) for the full survey.
 
-### Why bring your own bridge?
+### Why is the bridge transcript-based instead of owning stdio?
 
-Because the moment we ship a bridge that starts `claude`, we are
-tempted to also "manage" it — restart it, signal it, walk `ps` to
-find it. That path leads to take-over: open-rc trying to find and
-replace a `claude` the user started elsewhere. Take-over is
-forbidden, so the relay leaves process control entirely to the user.
-The user's machine, the user's pipes, the user's problem.
+Because the moment a bridge starts `claude`, it is tempted to also
+"manage" it — restart it, signal it, walk `ps` to find it. That path
+leads to take-over, and take-over is forbidden. `attach-orc` therefore
+shares a session **from the outside**: it reads the transcript the
+session already writes (session→browser) and answers Claude Code's own
+hook callbacks (browser→session). It has no `child_process`, no PTY,
+no tmux — it literally cannot start or kill anything. If you need raw
+stream-json fidelity (token deltas, permission prompts over the wire),
+bring your own stdio bridge; the relay treats both identically.
 
 ### What `open-rc` does NOT do
 
@@ -375,7 +454,8 @@ The user's machine, the user's pipes, the user's problem.
   mode binds to loopback; hub mode uses its own Ed25519 device
   enrollment.
 - It does **not** take over external `claude` sessions. The server
-  has no way to find one.
+  has no way to find one; `attach-orc` only ever *reads* the
+  transcript of the session that invited it via `/attach-orc`.
 - It does **not** create clients from the browser. The browser shows
   what bridges are currently connected; it cannot start one. To
   start a new "session" in the sidebar, open another bridge from
@@ -451,19 +531,22 @@ still need to learn per provider.
 - **Claude Code CLI** (`claude` on `PATH`) — required only on the
   machine where the user runs `claude`. The server does not need it.
 - A browser, for the UI
-- A way to pipe `claude`'s `stream-json` over WebSocket — your
-  bridge, your choice. `open-rc` does not provide one.
+- To share an interactive session: `make setup` (hooks + `/attach-orc`).
+  To bridge a stream-json `claude` yourself: any way to pipe its stdio
+  over WebSocket.
 
 ---
 
 ## Status
 
-**Phases 1–7 complete.** `open-rc serve` is a pure WebSocket relay
-that never starts or manages `claude`. The CLI exposes three commands
-— `serve`, `hub`, and `tui`: `serve`/`hub` are relays and `tui` is a
-`/ws` client. You bring your own bridge to `/agent`. (`attach-orc` and
-`attach-tmux` were built and then removed as out of scope; they may
-return as a deliberate future feature.)
+**Phases 1–8 complete.** `open-rc serve` is a pure WebSocket relay
+that never starts or manages `claude`. The CLI exposes `serve`, `hub`,
+`tui`, `attach-orc`, and `hook`; none of them launch a process.
+`/attach-orc` shares the interactive Claude Code session you are
+already in — transcript-tail out, hook-delivery in. (An earlier
+`attach-orc` that *spawned* `claude`, and `attach-tmux`, were removed
+as out of scope; the current `attach-orc` shares an existing session
+and spawns nothing.)
 
 | Phase | What                                     | Status |
 | ----- | ---------------------------------------- | ------ |
@@ -475,6 +558,7 @@ return as a deliberate future feature.)
 | 6     | Hardening (tests, typecheck, cross-build)| ✓      |
 | 7     | **Relay pivot** — server never starts processes     | ✓      |
 | 8.1   | PWA install + offline app-shell cache     | ✓      |
+| 8.2   | **Shared sessions** — `/attach-orc` transcript bridge + hook delivery | ✓ |
 
 ### UI at a glance
 

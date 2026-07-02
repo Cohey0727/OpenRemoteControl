@@ -70,12 +70,43 @@ forwards user prompts and tool-call requests to Claude Code.
   subprocess: no process-creation calls (`fork`, `exec`, or the
   Bun/Node equivalents), no walking `ps`, `lsof`, or `/proc`, no
   signalling (SIGTERM, SIGKILL, SIGINT, SIGHUP), no PTY, no tmux. The
-  entire CLI is `serve`, `hub`, and `tui`, each of which runs only its
-  own process. The user runs `claude` themselves; a `claude` in
-  another terminal is untouched, because open-rc doesn't know it is
-  there. There is no `/api/external-sessions` endpoint, no
-  `claim_external_session` WS frame, and no `/internal/hook`
-  PreToolUse endpoint.
+  entire CLI is `serve`, `hub`, `tui`, `attach-orc`, and `hook`, each
+  of which runs only its own process. The user runs `claude`
+  themselves; a `claude` in another terminal is untouched unless its
+  own session invokes `/attach-orc`. There is no
+  `/api/external-sessions` endpoint, no `claim_external_session` WS
+  frame, and no `/internal/hook` PreToolUse endpoint.
+
+## Shared-session (`/attach-orc`) surface
+
+Sharing a session widens what a viewer can see and do — by design.
+Know what you are enabling:
+
+- **Transcript exposure.** `open-rc attach-orc` reads the session's
+  transcript JSONL (`~/.claude/projects/…`) read-only and replays it
+  to `serve`; every attached browser/`tui` sees the conversation,
+  tool commands, and (truncated) tool output. With serve on
+  `127.0.0.1` that is only you; if you expose serve, everyone who can
+  reach it can read every shared session. Same trust rules as the
+  rest of serve: loopback by default, TLS + auth in front otherwise.
+- **Prompt injection into your session.** Anyone who can send `send`
+  frames to serve can queue prompts that the Stop/UserPromptSubmit
+  hooks WILL deliver into your running session, marked with
+  `[open-rc]`. That is the feature. It also means exposing serve
+  without auth hands strangers a typewriter into your Claude session.
+- **Hooks are inert by default.** `open-rc hook stop|prompt|end`
+  (installed by `make setup` into `~/.claude/settings.json`) exit
+  immediately unless `~/.open-rc/attach/<sessionId>/bridge.json` has a
+  heartbeat fresher than 45 s — i.e. unless that specific session ran
+  `/attach-orc` and the bridge is alive. Delivery stops within 45 s of
+  the bridge dying.
+- **Coordination state, not conversation state.** The attach dir
+  holds queued prompts transiently (drained each hook), plus markers
+  and a heartbeat; the bridge removes the dir on exit. Conversation
+  content persists only where it always did — the transcript Claude
+  Code itself writes.
+- **`make teardown`** removes the hooks and the `/attach-orc` command
+  again.
 
 ## Reporting a vulnerability
 

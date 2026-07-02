@@ -189,12 +189,57 @@ Keeping process startup outside open-rc is deliberate:
   beyond the live client map.
 - **The server's surface doesn't grow.** The server ships exactly
   `serve` and `hub` and stays a pure relay no matter what bridge shape
-  the user invents. The only client-side helper shipped is `tui`, a
-  `/ws` client that starts nothing of its own. (Two helpers that
-  launched subprocesses — `attach-orc` and `attach-tmux` — were built
-  and then removed on 2026-07-02; starting `claude` is out of scope and
-  may return only as a deliberate future feature. The user brings their
-  own bridge to `/agent`.)
+  feeds it. Client-side, two helpers ship: `tui` (a `/ws` client that
+  starts nothing) and `attach-orc` (a transcript bridge that starts
+  nothing — it reads the JSONL the user's own session writes and
+  exchanges files with the `open-rc hook` handlers; see §3.1). Two
+  earlier helpers that launched subprocesses — the spawning
+  `attach-orc` and `attach-tmux` — were built and removed on
+  2026-07-02; the same day's `/attach-orc` goal was then implemented
+  spawn-free. Users can still bring any bridge of their own to
+  `/agent`.
+
+### 3.1 The `attach-orc` shared-session bridge
+
+`/attach-orc`, typed inside a running interactive Claude Code session,
+shares THAT session:
+
+```
+session → viewers   transcript JSONL (~/.claude/projects/<munged cwd>/<session>.jsonl)
+                    └─ attach-orc: replay (history) + tail (live) → /agent frames
+viewers → session   browser/tui `send` → serve `prompt` → attach-orc
+                    └─ queue.ndjson under ~/.open-rc/attach/<sessionId>/
+                       └─ open-rc hook stop|prompt (Claude Code hooks) → delivered
+```
+
+Components:
+
+- `src/transcript/locate.ts` — cwd → project transcript dir (every
+  non-alphanumeric character becomes `-`) → newest `*.jsonl` = the
+  current session (it just wrote `/attach-orc` to itself).
+- `src/transcript/translate.ts` — transcript entry → BridgeFrames
+  (`user`/`text`/`thinking`/`tool_use`/`tool_result`), dropping
+  sidechains, meta entries, `<command-…>` wrappers, and
+  `[open-rc]`-marked round-trips (the server already echoed those).
+- `src/transcript/tail.ts` — byte-offset polling tailer (300 ms),
+  partial-line safe.
+- `src/attach/state.ts` — the bridge ⇄ hooks filesystem contract:
+  `bridge.json` heartbeat (15 s; hooks no-op when stale),
+  `attached.json` viewer count (from the server's `attached` frames),
+  `queue.ndjson` prompts (rename-aside drain, crash-recoverable),
+  `stop.marker` (Stop hook fired → bridge sends `done`), `end.marker`
+  (SessionEnd → bridge unregisters and exits).
+- `src/cli/attach-hooks.ts` — `open-rc hook stop|prompt|end`. Stop
+  drains the queue and blocks the stop with the messages as reason
+  (that is how a browser prompt enters the session); while viewers are
+  attached it lingers (default 45 s, `ORC_STOP_LINGER_MS`) so
+  browser-driven conversation flows turn after turn.
+- clientId = session id, so `/sessions/<id>` deep links survive bridge
+  restarts; a second bridge on the same session fails fast on the
+  duplicate-clientId register error.
+
+The bridge holds no conversation state of its own — kill it and
+nothing is lost; re-running `/attach-orc` re-replays the transcript.
 
 ---
 
@@ -597,7 +642,7 @@ wait for them to re-register.
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
 | **`open-rc serve`**  | The pure WS relay. The only thing open-rc ships (besides `hub`).   |
 | **Hub**              | `open-rc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. open-rc ships none — you write your own (the `attach-orc`/`attach-tmux` helpers that launched subprocesses were removed as out of scope). |
+| **Bridge**           | Whatever feeds `/agent`. First-party: `open-rc attach-orc`, a spawn-free transcript bridge for the session it is invoked from (§3.1). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |
