@@ -76,6 +76,9 @@ identical: `docker compose up -d`, then `/attach-orc` inside your
 session. `make docker-serve` / `make docker-logs` / `make docker-stop`
 wrap the same thing.
 
+Full guide — ports and exposure, the `/data` volume, VPS layout,
+upgrades, troubleshooting: [`docs/docker.md`](./docs/docker.md).
+
 ## Drive a `claude` session from your browser
 
 open-rc **shares an already-running `claude` — it never starts one.**
@@ -499,6 +502,9 @@ bring your own stdio bridge; the relay treats both identically.
   projects and the reasoning for the relay-only design.
 - [`docs/tech-stack.md`](./docs/tech-stack.md) — concrete picks and
   alternatives considered.
+- [`docs/docker.md`](./docs/docker.md) — running the relay with
+  Docker: compose quick start, port/exposure model, the `/data`
+  volume, VPS layout, upgrades, troubleshooting.
 
 ---
 

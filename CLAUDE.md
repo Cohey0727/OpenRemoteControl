@@ -335,7 +335,8 @@ fallback) closes it with a `done` frame.
   handling, zod for wire-protocol validation.
 - Documentation follow-up is mandatory when code changes — update
   README, docs/roadmap, docs/architecture, docs/survey,
-  docs/tech-stack, SECURITY.md, and this file in the same task.
+  docs/tech-stack, docs/docker, SECURITY.md, and this file in the
+  same task.
 - **Commit every change immediately, without being asked, and push.**
   After any substantive edit (once lint/typecheck/tests are green),
   `git add -A && git commit` and `git push` right away — never leave
