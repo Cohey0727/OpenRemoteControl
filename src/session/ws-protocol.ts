@@ -280,8 +280,15 @@ export const StatusUpdate = z.object({
 });
 export type StatusUpdate = z.infer<typeof StatusUpdate>;
 
-/** Frames forwarded to attached browsers. The server adds `clientId`. */
+/** Frames forwarded to attached browsers. The server adds `clientId`.
+ *
+ * `user` is a prompt the bridge observed on ITS side of the session —
+ * e.g. one typed directly into the shared `claude` terminal, replayed
+ * from the session transcript. Prompts sent through the server
+ * (`send`) are echoed by the server itself and never re-sent by the
+ * bridge. */
 export const BridgeFrame = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('user'), text: z.string() }),
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('text_delta'), text: z.string() }),
   z.object({ type: z.literal('thinking'), text: z.string() }),
@@ -323,8 +330,21 @@ export const PromptMessage = z.object({
 });
 export type PromptMessage = z.infer<typeof PromptMessage>;
 
+/**
+ * How many browsers/`tui` clients are currently attached to this
+ * client. Sent on every attach/detach so a bridge can adapt (e.g. the
+ * transcript bridge keeps its post-turn listening window open only
+ * while someone is actually watching).
+ */
+export const AttachedCount = z.object({
+  type: z.literal('attached'),
+  count: z.number().int().min(0),
+});
+export type AttachedCount = z.infer<typeof AttachedCount>;
+
 export const ServerToBridge = z.discriminatedUnion('type', [
   PromptMessage,
+  AttachedCount,
   z.object({
     type: z.literal('permission_response'),
     requestId: z.string(),

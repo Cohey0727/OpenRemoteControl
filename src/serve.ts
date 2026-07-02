@@ -105,6 +105,19 @@ export async function serve(opts: ServeOptions): Promise<{
     return [...clients.values()].map(infoOf);
   }
 
+  /** Tell a bridge how many browsers/tui clients are watching it now.
+   *  Best-effort: a bridge that is already gone is silently skipped. */
+  function notifyAttachedCount(clientId: string): void {
+    const conn = clients.get(clientId);
+    if (!conn) return;
+    const count = attachedBrowsers.get(clientId)?.size ?? 0;
+    try {
+      (conn.ws as ServerWebSocket<WsData>).send(JSON.stringify({ type: 'attached', count }));
+    } catch {
+      // bridge socket closed mid-notify; the close handler cleans up
+    }
+  }
+
   /* ----------------------------- WS handlers ---------------------------- */
 
   const handlers = makeWsHandlers({
@@ -217,6 +230,7 @@ export async function serve(opts: ServeOptions): Promise<{
         attachedBrowsers.set(clientId, set);
       }
       set.add(browser);
+      notifyAttachedCount(clientId);
 
       let detached = false;
       return () => {
@@ -227,6 +241,7 @@ export async function serve(opts: ServeOptions): Promise<{
           s.delete(browser);
           if (s.size === 0) attachedBrowsers.delete(clientId);
         }
+        notifyAttachedCount(clientId);
       };
     },
     broadcastToBrowsers(clientId, frame) {
@@ -483,7 +498,11 @@ export async function serve(opts: ServeOptions): Promise<{
 
   const stop = async () => {
     if (pushStore) pushStore.close();
-    await server.stop();
+    // Force-close remaining connections: a relay's sockets have no
+    // shutdown value, and a half-closed WS (e.g. a client that sent
+    // `unregister` and closed while the server was closing the same
+    // socket) would otherwise park graceful stop forever.
+    await server.stop(true);
   };
 
   return { stop };

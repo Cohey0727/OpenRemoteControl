@@ -3,19 +3,31 @@
  * `open-rc` CLI entry point.
  *
  * Commands:
- *   serve   Local WebSocket relay + SPA (default if no command given).
- *   hub     Public relay that brokers many `serve` instances to many
- *           browsers.
- *   tui     Terminal front-end for a relayed session. A plain `/ws`
- *           client (like the browser) — attaches to a clientId and
- *           renders/sends frames.
+ *   serve       Local WebSocket relay + SPA (default if no command
+ *               given).
+ *   hub         Public relay that brokers many `serve` instances to
+ *               many browsers.
+ *   tui         Terminal front-end for a relayed session. A plain
+ *               `/ws` client (like the browser) — attaches to a
+ *               clientId and renders/sends frames.
+ *   attach-orc  Share the ALREADY-RUNNING Claude Code session of the
+ *               current directory: replays + tails its transcript to
+ *               `/agent` and queues browser prompts for the Claude
+ *               Code hooks to deliver. Started in the background by
+ *               the `/attach-orc` slash command.
+ *   hook        Claude Code hook handlers (stop|prompt|end) — the
+ *               queue-delivery half of attach-orc. Wired into
+ *               `~/.claude/settings.json` by `make setup`.
  *
- * All three run no processes of their own. `serve`/`hub` are
- * byte-pass-through relays; `tui` is a WebSocket client. The user runs
- * `claude` themselves and brings their own bridge that pipes its
- * stream-json to the `/agent` WebSocket; open-rc only relays.
+ * None of these launch a process. `serve`/`hub` are byte-pass-through
+ * relays; `tui` is a WebSocket client; `attach-orc` reads the session
+ * transcript the user's own `claude` writes; `hook` handlers exchange
+ * files with the bridge. There is no child_process, PTY, or tmux
+ * anywhere in open-rc.
  */
 
+import { runHookCommand } from './cli/attach-hooks.ts';
+import { parseAttachOrcFlags, runAttachOrc } from './cli/attach-orc.ts';
 import { parseFlags } from './cli/flags.ts';
 import { parseTuiFlags, runTui } from './cli/tui.ts';
 import { HubServer } from './hub/server.ts';
@@ -85,8 +97,29 @@ if (command === 'serve' || command === '') {
 } else if (command === 'tui') {
   const tuiFlags = parseTuiFlags(process.argv.slice(3));
   await runTui(tuiFlags);
+} else if (command === 'attach-orc') {
+  const attachFlags = parseAttachOrcFlags(process.argv.slice(3));
+  let handle: Awaited<ReturnType<typeof runAttachOrc>>;
+  try {
+    handle = await runAttachOrc(attachFlags, {
+      onExit: () => process.exit(0),
+    });
+  } catch (err) {
+    console.error(`open-rc attach-orc: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  }
+  const shutdown = async () => {
+    await handle.stop();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+} else if (command === 'hook') {
+  const event = process.argv[3] ?? '';
+  const stdinText = await Bun.stdin.text();
+  process.exit(await runHookCommand(event, stdinText));
 } else {
   console.error(`unknown command: ${command}`);
-  console.error('available commands: serve, hub, tui');
+  console.error('available commands: serve, hub, tui, attach-orc, hook');
   process.exit(2);
 }

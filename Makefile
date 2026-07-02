@@ -3,9 +3,9 @@
 # Thin convenience layer over the npm scripts in package.json. Run
 # `make help` for the list.
 #
-# The Makefile mirrors the CLI: `serve`, `hub`, and `tui` — pure
-# relays and a WebSocket client. The user runs `claude` themselves and
-# brings their own bridge to /agent.
+# The Makefile mirrors the CLI: `serve`, `hub`, `tui`, `attach-orc`,
+# and `hook` — relays, WebSocket clients, and the transcript bridge.
+# The user runs `claude` themselves; nothing here launches a process.
 
 SHELL := /bin/sh
 .SHELLFLAGS := -eu -c
@@ -58,17 +58,19 @@ install: ## Install deps (bun install)
 	@echo "Done. Run \`make serve\` (or \`bun run serve\`) to launch open-rc."
 
 .PHONY: setup
-setup: ## Register the open-rc launcher on PATH
+setup: ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command
 	@# Install the launcher on PATH. It's a thin wrapper around the
 	@# current source, so `git pull` updates behavior with no rebuild.
 	@mkdir -p $(BIN_DIR)
 	@printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc
 	@chmod +x $(BIN_DIR)/open-rc
-	@# Upgraders: drop the removed attach-orc launcher, its slash-command
-	@# symlink, and the superseded shell-init file if an older setup left them.
+	@# Upgraders: drop the long-gone standalone attach-orc launcher and
+	@# the superseded shell-init file if an older setup left them.
 	@rm -f $(BIN_DIR)/attach-orc
-	@rm -f $(HOME)/.claude/commands/attach-orc.md
 	@rm -f $(SHELL_INIT_FILE)
+	@# Claude Code integration: Stop/UserPromptSubmit/SessionEnd hooks in
+	@# ~/.claude/settings.json + the /attach-orc slash command symlink.
+	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/open-rc
 	@printf '%s\n' \
 	  '' \
 	  '  $(AMBER)$(BOLD)██████  ██████  ██████$(OFF)' \
@@ -84,10 +86,13 @@ setup: ## Register the open-rc launcher on PATH
 	  '      $(DIM)phone / laptop        the relay        you own this$(OFF)' \
 	  '' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
+	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / SessionEnd)$(OFF)' \
+	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md' \
 	  '' \
-	  ' $(BOLD)bring your own bridge$(OFF) $(DIM)— pipe your claude to /agent$(OFF)' \
-	  '   $(CYAN)open-rc serve$(OFF)   $(DIM)the relay + SPA$(OFF)' \
-	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto a relayed session$(OFF)' \
+	  ' $(BOLD)share the session you are already in$(OFF)' \
+	  '   $(CYAN)open-rc serve$(OFF)      $(DIM)the relay + SPA$(OFF)' \
+	  '   $(CYAN)/attach-orc$(OFF)        $(DIM)inside claude — mirror THIS session to the browser$(OFF)' \
+	  '   $(CYAN)open-rc tui$(OFF)        $(DIM)a terminal window onto a relayed session$(OFF)' \
 	  ''
 	@case ":$$PATH:" in \
 	  *":$(BIN_DIR):"*) ;; \
@@ -98,12 +103,13 @@ setup: ## Register the open-rc launcher on PATH
 	esac
 
 .PHONY: teardown
-teardown: ## Remove the PATH launcher (and any stale attach-orc leftovers)
+teardown: ## Remove the launcher, Claude Code hooks, and /attach-orc command
+	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --remove || true
 	@rm -f $(BIN_DIR)/open-rc
 	@rm -f $(BIN_DIR)/attach-orc
 	@rm -f $(HOME)/.claude/commands/attach-orc.md
 	@rm -f $(SHELL_INIT_FILE)
-	@echo "Removed: $(BIN_DIR)/open-rc (and stale attach-orc launcher/command if present)"
+	@echo "Removed: $(BIN_DIR)/open-rc, Claude Code hooks, and /attach-orc command"
 	@echo "Note: any 'export PATH=$(BIN_DIR):...' or 'source $(SHELL_INIT_FILE)' lines"
 	@echo "      you added to ~/.zshrc / ~/.bashrc were NOT removed — clean those up by hand."
 

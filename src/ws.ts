@@ -403,6 +403,7 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         setBridgeStatus(clientId, msg.status);
         broadcastServerMessage({ type: 'clients_changed', clients: deps.listClients() });
         return;
+      case 'user':
       case 'text':
       case 'text_delta':
       case 'thinking':
@@ -421,6 +422,8 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         //    modal for an already-answered request),
         //  - text_delta (the final `text` frame carries the same
         //    content; replaying both would render the reply twice).
+        // Bridge-observed `user` prompts (e.g. typed into the shared
+        // terminal) ARE recorded, like the server's own send echoes.
         if (msg.type !== 'permission_request' && msg.type !== 'text_delta') {
           recordHistory(clientId, tagged);
         }

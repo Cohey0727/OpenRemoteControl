@@ -1,0 +1,126 @@
+/**
+ * Hook handlers: the browser → session delivery half of attach-orc.
+ * Everything runs in-process — the handlers are pure functions over
+ * stdin JSON and the attach state dir.
+ */
+
+import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
+import {
+  appendQueue,
+  attachDirFor,
+  createAttachDir,
+  endMarkerExists,
+  stopMarkerMtime,
+  writeAttachedCount,
+  writeBridgeInfo,
+} from '../src/attach/state.ts';
+import { parseHookInput, runEndHook, runPromptHook, runStopHook } from '../src/cli/attach-hooks.ts';
+import { OPENRC_MARKER } from '../src/transcript/translate.ts';
+
+const base = join(import.meta.dir, '.tmp-hooks');
+
+async function liveBridgeSession(): Promise<{ sessionId: string; dir: string }> {
+  const sessionId = crypto.randomUUID();
+  const dir = attachDirFor(sessionId, base);
+  await createAttachDir(dir);
+  await writeBridgeInfo(dir, {
+    clientId: sessionId,
+    server: 'ws://t/agent',
+    startedAt: Date.now(),
+  });
+  return { sessionId, dir };
+}
+
+describe('parseHookInput', () => {
+  test('valid input parses, garbage returns null', () => {
+    expect(parseHookInput('{"session_id":"s1","stop_hook_active":false}')?.session_id).toBe('s1');
+    expect(parseHookInput('not json')).toBeNull();
+    expect(parseHookInput('{"no_session":true}')).toBeNull();
+  });
+});
+
+describe('runStopHook', () => {
+  test('no bridge → no output, no marker', async () => {
+    const sessionId = crypto.randomUUID();
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 0 });
+    expect(result.output).toBeUndefined();
+    expect(await stopMarkerMtime(attachDirFor(sessionId, base))).toBeNull();
+  });
+
+  test('queued prompts → block decision carrying the prompts, marker touched', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await appendQueue(dir, 'fix the bug');
+    await appendQueue(dir, 'then run tests');
+
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 0 });
+    expect(result.output?.decision).toBe('block');
+    const reason = result.output?.reason as string;
+    expect(reason).toContain(OPENRC_MARKER);
+    expect(reason).toContain('fix the bug');
+    expect(reason).toContain('then run tests');
+    expect(await stopMarkerMtime(dir)).toBeNumber();
+  });
+
+  test('empty queue + nobody attached → returns immediately even with a long window', async () => {
+    const { sessionId } = await liveBridgeSession();
+    const started = Date.now();
+    const result = await runStopHook(
+      { session_id: sessionId },
+      { baseDir: base, lingerMs: 60_000 },
+    );
+    expect(result.output).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  test('lingers while attached and picks up a prompt that arrives late', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await writeAttachedCount(dir, 1);
+    setTimeout(() => {
+      void appendQueue(dir, 'late browser message');
+    }, 400);
+
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 5_000 });
+    expect(result.output?.decision).toBe('block');
+    expect(result.output?.reason as string).toContain('late browser message');
+  });
+
+  test('linger window expires cleanly with nothing queued', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await writeAttachedCount(dir, 1);
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 500 });
+    expect(result.output).toBeUndefined();
+  });
+});
+
+describe('runPromptHook', () => {
+  test('queued prompts ride along as additionalContext', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await appendQueue(dir, 'from the browser');
+    const result = await runPromptHook(
+      { session_id: sessionId, prompt: 'cli says hi' },
+      { baseDir: base },
+    );
+    const specific = result.output?.hookSpecificOutput as Record<string, unknown>;
+    expect(specific.hookEventName).toBe('UserPromptSubmit');
+    expect(specific.additionalContext as string).toContain('from the browser');
+  });
+
+  test('no queue → silent no-op', async () => {
+    const { sessionId } = await liveBridgeSession();
+    const result = await runPromptHook({ session_id: sessionId }, { baseDir: base });
+    expect(result.output).toBeUndefined();
+  });
+});
+
+describe('runEndHook', () => {
+  test('touches the end marker only for live bridges', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await runEndHook({ session_id: sessionId }, { baseDir: base });
+    expect(await endMarkerExists(dir)).toBe(true);
+
+    const stray = crypto.randomUUID();
+    await runEndHook({ session_id: stray }, { baseDir: base });
+    expect(await endMarkerExists(attachDirFor(stray, base))).toBe(false);
+  });
+});
