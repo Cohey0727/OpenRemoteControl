@@ -18,11 +18,15 @@ forwards user prompts and tool-call requests to Claude Code.
 
 ## What `open-rc` handles for you
 
-- **Permission prompts**: every tool call Claude Code wants to make
-  is intercepted by the `PreToolUse` hook and surfaced to the UI.
-  No tool call runs without an explicit allow/deny decision (in
-  any mode other than `bypassPermissions`, which is the default for
-  trusted local use).
+- **Permission forwarding**: the server relays `permission_request`
+  frames from a bridge to every attached browser and routes the
+  browser's `permission_response` back. Whether tool calls actually
+  pause for approval depends entirely on the user's `claude` and
+  their bridge (e.g. whether the bridge wires a `PreToolUse` hook);
+  the server itself neither spawns `claude` nor enforces a policy —
+  it only forwards the frames. There is no server-side PreToolUse
+  hook and no `bypassPermissions` default (that subsystem was
+  removed with the no-spawn pivot).
 - **Audit log**: every permission decision and a session lifecycle
   events are appended to `~/.local/share/open-rc/audit.jsonl`.
   No rotation is performed automatically; check the file periodically
@@ -50,6 +54,11 @@ forwards user prompts and tool-call requests to Claude Code.
   authenticate browsers. Anyone who can reach the hub's `/browser`
   endpoint can read sessions and inject prompts. Put it behind an
   authenticated reverse proxy.
+- **Take-over trust**: not a concern. There is no
+  `/api/external-sessions/:pid/claim` endpoint, no
+  `claim_external_session` WS frame, and no take-over flow of any
+  kind. `open-rc serve` cannot kill or replace any process it
+  didn't spawn, and it didn't spawn anything.
 - **Authorization**: the audit log records decisions but does not
   enforce policy. Read it.
 - **VAPID private key rotation**: there's no built-in rotation;
@@ -57,6 +66,26 @@ forwards user prompts and tool-call requests to Claude Code.
 - **Device key revocation**: a hub can disable a device by deleting
   it from the SQLite store (`hub.db`), but no UI ships for this in
   v0.1.
+- **No spawn. No subprocess management. No process discovery.**
+  `open-rc serve` does not call `Bun.spawn`, `fork`, `exec`, or any
+  equivalent. It does not walk `ps`, `lsof`, `/proc`, or any process
+  table. It does not signal any process (SIGTERM, SIGKILL, SIGINT,
+  SIGHUP) under any circumstance. The third CLI command
+  `open-rc attach-orc` (a separate process the user runs in their
+  terminal) is the only place in the project that calls `Bun.spawn`
+  for `claude`. The `/attach-orc` Claude Code slash command
+  (`commands/attach-orc.md`, symlinked into `~/.claude/commands/`
+  by `make setup`) is a thin wrapper that asks Claude Code to run
+  the existing CLI process — it does not introduce any new spawn
+  point. `open-rc hub` follows the same no-spawn rule as `serve`.
+  The user runs `claude` themselves; whatever they do with it is
+  their business. A `claude` running in another terminal is
+  unaffected by anything `open-rc serve` does — open-rc doesn't
+  know it's there. There is no `/api/external-sessions` endpoint,
+  no `claim_external_session` WS frame, no `/internal/hook` endpoint
+  for a PreToolUse hook (that was tied to a server-spawned
+  subprocess). The server's process table is exactly what Bun
+  started when the user ran `open-rc serve`. Nothing else.
 
 ## Reporting a vulnerability
 
@@ -80,3 +109,10 @@ issues.
 - [ ] If you don't use push notifications, leave `pushDisabled` /
       don't load `/sw.js` — there's no point shipping an attack surface
       you don't use.
+- [ ] `GET /manifest.webmanifest`, `GET /icon.svg`, and the icon
+      PNGs are unauthenticated public assets by design (the manifest
+      has to be readable for the browser to offer install). Treat
+      them as if they were served by any static-file host: nothing
+      sensitive in `ui/`.
+- [ ] Two `open-rc serve` instances can coexist as long as they bind
+      to different ports. The server has no per-cwd state.

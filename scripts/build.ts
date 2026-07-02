@@ -1,9 +1,17 @@
 #!/usr/bin/env bun
 /**
- * Cross-compile open-rc into standalone executables for the major
- * desktop platforms. Each output is a single binary that bundles Bun
- * plus our source code — no `node_modules`, no Bun install required
- * on the target.
+ * Cross-compile open-rc into standalone executables for **distribution**.
+ *
+ * IMPORTANT: this is NOT required to run the server. Because the
+ * runtime is Bun, you can launch the server directly with
+ *   bun run src/cli.ts serve --host 127.0.0.1 --port 7322
+ * without ever running `bun run build`. This script exists only to
+ * produce single-file binaries that bundle Bun + the source — useful
+ * for `npm publish` tarballs, GitHub release artifacts, and shipping
+ * to users who do not have Bun installed.
+ *
+ * Each output is a single binary that bundles Bun plus our source code
+ * — no `node_modules`, no Bun install required on the target.
  *
  * Targets:
  *   - linux-x64

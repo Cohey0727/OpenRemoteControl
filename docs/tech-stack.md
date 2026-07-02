@@ -69,28 +69,31 @@ for itself immediately.
 
 ## HTTP + WebSocket: Bun.serve
 
-**Pick:** `Bun.serve` with explicit routes for HTTP and a WebSocket
-handler on `/bridge`.
+**Pick:** `Bun.serve` with one `fetch` handler that routes HTTP and
+upgrades two WebSocket paths — `/ws` for browsers and `/agent` for
+bridges.
 
 **Why:**
-- One port, one process, one API. `Bun.serve({ port, routes, websocket })`.
+- One port, one process, one API. `Bun.serve({ port, fetch, websocket })`.
 - Native WebSocket upgrade. No library.
 - Native HTTP/1.1 + HTTP/2 (when TLS is configured).
 - Built-in backpressure handling.
 
-**Shape we will use:**
+**Shape we use** (see `src/serve.ts`):
 ```ts
-Bun.serve({
-  port: 8080,
-  routes: {
-    "/":          indexHandler,    // SPA
-    "/api/...":   apiHandler,      // JSON API
-    "/static/*":  staticHandler,   // SPA assets
+Bun.serve<WsData>({
+  hostname: "127.0.0.1",
+  port: 7322,
+  fetch(req, srv) {
+    const url = new URL(req.url);
+    if (url.pathname === "/ws")    return srv.upgrade(req, { data: { kind: "browser", … } });
+    if (url.pathname === "/agent") return srv.upgrade(req, { data: { kind: "bridge",  … } });
+    // "/", "/health", "/api/push/*", "/sw.js", static UI assets…
   },
   websocket: {
-    open:    bridgeOpen,
-    message: bridgeMessage,
-    close:   bridgeClose,
+    open(ws)          { /* dispatch by ws.data.kind */ },
+    message(ws, raw)  { /* dispatch by ws.data.kind */ },
+    close(ws)         { /* dispatch by ws.data.kind */ },
   },
 });
 ```
@@ -104,7 +107,12 @@ surface we need).
 ## Persistence: bun:sqlite (hub mode only)
 
 **Pick:** `bun:sqlite` for the hub's session registry, device keys, audit
-log. Local mode has no persistent state.
+log. Local `serve` mode has no DISK-persistent state on the server side —
+it holds only an in-memory map of currently-connected clients plus a
+bounded in-memory replay buffer per client (for history-on-attach), and
+loses both on restart. The user owns any durable persistence of their
+`claude` sessions; open-rc does not touch `sessions.json`, any
+per-session file, or `claude`'s transcripts.
 
 **Why:**
 - Zero external dependency. One file: `~/.local/share/open-rc/hub.db`.
@@ -145,39 +153,58 @@ CREATE TABLE audit (
 
 ---
 
-## UI: Solid.js + Vite (build) / Bun (dev)
+## UI: vanilla TypeScript + tiny signals (no build step)
 
-**Pick:** Solid.js for the SPA, bundled with Vite for the production
-build, served by Bun in dev for fast iteration.
+**Pick:** vanilla TypeScript for the SPA, with a ~30-line home-grown
+signal implementation in `ui/app.ts`. The server transpiles `ui/app.ts`
+on the fly with `Bun.Transpiler` and serves it as JavaScript. **There
+is no UI build step.** The one runtime dependency (`marked`) is
+vendored under `ui/vendor/` and resolved via `<script type="importmap">`.
+Assistant markdown is sanitized (script/handler/`javascript:` stripped
+via the browser's own parser) before it reaches the DOM.
 
-**Why Solid.js:**
-- Fine-grained reactivity. The session-event stream is dense; we need
-  per-row updates without re-rendering the whole list.
-- Smallest mainstream framework: ~7 KB gzipped for the runtime.
-- JSX with TypeScript feels like React to anyone who knows React.
-- No virtual DOM overhead; UI stays fast on long session histories.
+PWA assets follow the same rule: `ui/manifest.webmanifest` and the
+icon PNGs are checked in as static files and served straight off disk.
+`scripts/build-icons.ts` is a maintainer-only helper that
+re-rasterises `ui/icon.svg` into the icon sizes when the source SVG
+changes; it runs at developer time, never on the server boot path,
+and the runtime `serve` simply ships the pre-generated PNGs that
+already exist in the repo. `scripts/build.ts` (the distribution
+cross-compile) does not touch UI assets.
 
-**Why Vite for build:**
-- Best-in-class dev server (HMR for the SPA).
-- Bun's built-in bundler is fine but Vite's plugin ecosystem is broader
-  (CSS modules, asset hashing, etc.) and we already need to ship the
-  static bundle, so Vite is the lower-risk pick.
+**Why no build step:**
+- One source of truth for the SPA. Edit `ui/app.ts`, save, reload.
+- The server is the same process that hosts the SPA, so a single
+  `bun run serve` boots both the relay and the UI.
+- Removes a class of bugs (stale builds, mismatched hashes, missing
+  chunks) entirely.
+- Trade-off: first request for `app.ts` runs the transpiler (~50 ms
+  cold). For a tool the user keeps open in a tab, this is invisible.
 
-**Why Bun for dev:**
-- `bun --watch ./src/server.ts` is faster than `tsx watch` and integrates
-  directly with `bun:sqlite` + `Bun.serve`.
+**Why vanilla + tiny signals (not a framework):**
+- The SPA is small: one sidebar list, one chat transcript, one modal.
+  A framework's component model, lifecycle hooks, and reconciler are
+  paid for in bundle weight and cognitive overhead without buying
+  anything we use.
+- Fine-grained reactivity without a virtual DOM. The bridge-event
+  stream is dense; we need per-row updates without re-rendering the
+  whole sidebar.
+- Vendor surface stays under our control: `marked` is vendored
+  locally as plain JS, no CDN at runtime.
 
 **Styling:** vanilla CSS with CSS variables for theming. No Tailwind
 unless we hit a real reason to add it.
 
 **Alternatives considered:**
-- **Preact** — comparable size, but JSX ergonomics slightly worse than
-  Solid.
-- **Svelte** — excellent, but compile-step adds friction when iterating
-  on the WS message shapes.
-- **React** — fine, but 40+ KB of runtime is wasted on a SPA this small.
-- **Vanilla TS + lit-html** — would work, but Solid gives us better
-  organization for free.
+- **Solid.js** — fine framework, but added an opaque runtime that
+  consistently failed to render in our headless browser environment.
+  Vanilla DOM with a 30-line `signal()` does the same job for our
+  UI shape and removes the dependency.
+- **Vite** — adds a build step (and a separate dev process). We
+  don't need HMR because `bun --watch` restarts the whole server
+  when source files change.
+- **Preact / Svelte / React** — comparable reasoning as before; none
+  earn their weight on a SPA this small once vanilla TS proved viable.
 
 ---
 
@@ -279,43 +306,103 @@ configs to maintain), `dprint` (good, less ecosystem).
 
 ## Dependency policy
 
-- **Zero runtime dependencies for v0.1.** Everything we need is built into
-  Bun. Adding a dep is a deliberate, reviewable choice.
+- **Minimal runtime dependencies.** Bun covers HTTP, WS, subprocess,
+  fs, sqlite, and crypto natively. We do add focused deps when Bun
+  doesn't cover the surface area: `web-push` for VAPID push (Phase 5),
+  `zod` for wire-protocol validation (Phase 1+). Adding a dep is a
+  deliberate, reviewable choice.
 - After v0.1, deps are allowed but reviewed for: bundle size (SPA),
   startup time (server), maintenance status, license (MIT / Apache-2.0 /
   BSD only).
+
+## Process management
+
+`open-rc serve` does not manage processes. It does not spawn, fork,
+exec, attach, signal, or introspect any other process. There is no
+`Bun.spawn`, no `child_process`, no PTY. The server's process table
+is whatever Bun started when the user ran `open-rc serve` — that's
+it.
+
+`open-rc hub` follows the same rule.
+
+`open-rc attach-orc` is the **only** command that calls `Bun.spawn`.
+It is a separate CLI process the user runs in their terminal; it
+owns the `claude` subprocess (lifecycle, signals, stdio) and
+bridges its stream-json stdio to `/agent`. The server remains
+spawn-free. Removing `attach-orc` does not change the server's
+no-spawn property; removing `serve` does. `attach-orc` bridges the
+session itself — no `--model`/`--claude` knobs. It targets a remote
+serve via `ORC_BASE_URL` (http→ws, https→wss, `/agent` appended).
+
+If the user wants a `claude` running, they run it themselves. If the
+user wants it bridged to open-rc, they can either run
+`open-rc attach-orc` or write their own bridge. We do ship a bridge
+(`open-rc attach-orc`) — see `docs/architecture.md` §3.4.
+
+### Slash-command bootstrap
+
+`make setup` registers two launcher scripts — `attach-orc` and
+`open-rc` — in `~/.local/bin` (override with `BIN_DIR=`). Each is a
+two-line wrapper (`exec bun run <checkout>/src/cli.ts … "$@"`), so the
+absolute-path anchor lives in the launcher and a `git pull` updates
+behavior with no rebuild. The `/attach-orc` Claude Code slash command
+(`commands/attach-orc.md`, symlinked into `~/.claude/commands/`) has
+the generic body `attach-orc $ARGUMENTS`; because that is
+machine-independent, a **symlink** is safe and lets a `git pull`
+propagate edits with no reinstall. The slash command runs in a
+non-interactive shell, so it depends on the install dir being on PATH
+— `make setup` prints the one-line PATH fix when it isn't. `claude`
+still spawns in the caller's cwd, so `/attach-orc` drives whichever
+project you run it from. (Do not `>`-redirect into the command
+symlink — that truncates the repo source through the link; the
+launcher, not the command file, carries the path.)
 
 ---
 
 ## Build & distribution
 
-**Pick:** `bun build --compile` to produce a single static binary.
+**Pick (server runtime):** launch directly from TypeScript via Bun.
+No build step required for the developer or the user who already has
+Bun installed:
 
 ```bash
-bun build --compile --target=bun-darwin-arm64 \
-  --outfile dist/open-rc src/cli.ts
+bun run src/cli.ts serve --host 127.0.0.1 --port 7322
+```
+
+**Pick (binary distribution):** `bun build --compile` produces a
+single self-contained executable for users who do not have Bun
+installed. The build step is **optional** — it exists only to ship
+binaries, not to make the server runnable.
+
+```bash
+bun run build           # current host only
+bun run build --all     # linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64
+# → dist/open-rc-<os>-<arch>[.exe]
 ```
 
 Ship via:
-- `npm install -g open-rc` (the binary is downloaded by a postinstall
-  script, no Node code at runtime)
+- `npm install -g open-rc` (users who have Node/Bun can `bunx open-rc`
+  directly; the binary distribution is a convenience for the rest)
 - `brew install open-rc`
 - Direct `curl | tar` from GitHub releases
 
-**Why compile:** the user should not need Node, npm, or any package
-manager to run `open-rc`. One binary, double-click, done.
+**Why compile:** users who don't have Bun should still be able to
+download and run `open-rc` with no Node, npm, or package manager
+involved. One binary, double-click, done.
 
 ---
 
 ## Versioning: SemVer
 
-**Pick:** SemVer 2.0. Bridge protocol versions are an explicit field on
-every message (`"v": 1`); backwards-incompatible bumps are major
-versions of `open-rc`.
+**Pick:** SemVer 2.0 for `open-rc` itself. Wire-protocol changes are
+tracked by the zod schemas in `src/session/ws-protocol.ts`; any
+breaking change to those schemas is a major version bump.
 
-**Wire compatibility:** the bridge protocol version is what the CLI and
-the hub negotiate. Hub accepts the highest version both support. We do
-not break the wire without a major release.
+**Wire compatibility:** the server does not currently negotiate a
+protocol version with the bridge — frames are typed by their `type`
+discriminator (`register`, `text`, `thinking`, etc.). Adding a
+version field is a backward-compatible change. We do not break the
+wire without a major release.
 
 ---
 
@@ -327,11 +414,13 @@ not break the wire without a major release.
 | Language       | TypeScript (strict)        | —                    |
 | HTTP / WS      | Bun.serve                  | Hono + ws            |
 | Persistence    | bun:sqlite                 | Postgres, libSQL     |
-| UI framework   | Solid.js                   | Preact, Svelte, React |
-| UI build       | Vite                       | esbuild, Bun bundler |
+| UI framework   | vanilla TS + tiny signals | Solid, Preact, Svelte, React |
+| UI build       | none (Bun.Transpiler + importmap) | Vite, esbuild   |
 | Crypto         | WebCrypto (Ed25519)        | @noble/ed25519       |
-| Auth           | Email magic link           | OAuth, WebAuthn      |
-| Logging        | pino                       | winston, bunyan      |
-| Tests          | bun test + Playwright      | vitest               |
+| Auth           | Ed25519 device pairing     | OAuth, WebAuthn      |
+| Logging        | console                    | pino, winston        |
+| Wire schemas   | zod                        | ajv, json-schema, TypeBox |
+| Push           | web-push                   | pushpad, OneSignal SDK |
+| Tests          | bun test                   | vitest, Playwright   |
 | Lint / format  | Biome                      | ESLint + Prettier    |
-| Distribution   | bun build --compile        | npm pkg, Docker      |
+| Distribution   | bun build --compile (opt.) | npm pkg, Docker      |

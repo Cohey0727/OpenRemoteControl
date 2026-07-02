@@ -415,6 +415,12 @@ direction but requires confirmation.
 **Adopt (b) — `claude --bare --output-format stream-json` subprocess,
 pocket-claude style.**
 
+> **Update (2026-07-02):** the shipped `attach-orc` uses `--print`
+> rather than `--bare`. Bare mode's Anthropic auth is strictly
+> `ANTHROPIC_API_KEY`/`apiKeyHelper`, so on OAuth-login machines every
+> prompt returned "Not logged in". Same public stream-json wire format
+> either way; see [`architecture.md`](./architecture.md) §8.2.
+
 Concrete reasons:
 
 1. **Only approach provably satisfying the provider-agnostic goal.**
@@ -433,6 +439,44 @@ provider compatibility (or Anthropic ships a first-party adapter), the
 ACP approach buys us multi-agent support for free. Not now.
 
 **Reject (a), (a'), (d).** Documented above.
+
+### No-spawn pivot (Phase 7 addendum)
+
+Earlier versions of `open-rc` shipped a server that spawned one
+`claude` subprocess per session (`open-rc attach` / `attach-orc`,
+plus a server-side `SessionManager`). That model has been removed in
+favor of a pure WebSocket relay:
+
+- **`open-rc serve` does not spawn anything.** No `Bun.spawn`, no
+  `fork`, no `exec`. The server's process table is unchanged after
+  `serve` boots.
+- **`open-rc serve` does not manage anything.** No session lifecycle,
+  no disk persistence, no `sessions.json` (only a bounded in-memory
+  replay buffer per connected client, dropped on disconnect).
+- **The user runs `claude` themselves.** Whatever pipeline they use
+  to feed `stream-json` over a WebSocket to the relay is their
+  problem — `open-rc` ships no bridge, by design.
+
+Why this pivot:
+
+- Take-over (terminate an external `claude` and replace it with an
+  open-rc-managed subprocess) is permanently banned. Take-over
+  requires the server to *find* `claude` processes, which requires
+  walking `ps`/`lsof`/`/proc`. The cleanest way to keep that
+  temptation off the table is to ship a server that has no spawn
+  capability at all.
+- The relay model makes multi-host trivial: `claude` lives on the
+  machine that has its working directory and credentials; the
+  user's bridge lives there; the server can live anywhere reachable;
+  the browser can live anywhere reachable.
+- Provider agnosticism is preserved because the user still runs
+  `claude --bare` themselves, with whatever `ANTHROPIC_BASE_URL`
+  setup they already use.
+
+We still don't chase `barjakuzu`'s `/remote-control` handoff or
+`permissionnine9`'s PTY mirroring — those require either kill-and-
+swap (which we banned) or unstructured TTY mirroring (which loses
+the JSONL framing the user owns the bridge for).
 
 ---
 

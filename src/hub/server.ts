@@ -32,6 +32,10 @@ interface DeviceWsData {
   kind: 'device';
   deviceId: string | null;
   authenticated: boolean;
+  /** Nonce issued for the current proof-of-possession challenge. */
+  pendingNonce: string | null;
+  /** Public key being proven in the current challenge. */
+  pendingPublicKey: string | null;
 }
 
 interface BrowserWsData {
@@ -73,7 +77,14 @@ export class HubServer {
       websocket: {
         open: (ws) => {
           // data is initialized on upgrade via /device or /browser path
-          if (!ws.data) ws.data = { kind: 'device', deviceId: null, authenticated: false };
+          if (!ws.data)
+            ws.data = {
+              kind: 'device',
+              deviceId: null,
+              authenticated: false,
+              pendingNonce: null,
+              pendingPublicKey: null,
+            };
           if (ws.data.kind === 'browser') {
             this.browsers.add(ws);
             ws.send(JSON.stringify({ type: 'hello', role: 'browser' }));
@@ -102,7 +113,13 @@ export class HubServer {
     const url = new URL(req.url);
     if (url.pathname === '/device') {
       const ok = srv.upgrade(req, {
-        data: { kind: 'device', deviceId: null, authenticated: false },
+        data: {
+          kind: 'device',
+          deviceId: null,
+          authenticated: false,
+          pendingNonce: null,
+          pendingPublicKey: null,
+        },
       });
       if (ok) return new Response(null, { status: 101 });
       return new Response('upgrade failed', { status: 400 });
@@ -195,10 +212,14 @@ export class HubServer {
         }
         ws.data.deviceId = device.id;
         if (device.approved) {
-          ws.data.authenticated = true;
-          this.devices.set(device.id, { ws, sessions: new Set() });
-          this.store.audit(device.id, 'connect');
-          ws.send(JSON.stringify({ type: 'enroll_ok', deviceId: device.id }));
+          // Proof-of-possession: the public key alone is not a secret
+          // (it is even served from /api/devices), so challenge the
+          // device to sign a fresh nonce before trusting it. Only a
+          // holder of the matching private key can complete enroll_verify.
+          const nonce = randomBytes(32).toString('base64');
+          ws.data.pendingNonce = nonce;
+          ws.data.pendingPublicKey = publicKey;
+          ws.send(JSON.stringify({ type: 'challenge', nonce }));
         } else {
           // Issue a pairing token; browser POSTs to /api/pair to approve.
           const token = randomBytes(16).toString('hex');
@@ -215,6 +236,29 @@ export class HubServer {
         }
         return;
       }
+      case 'enroll_verify': {
+        const signature = msg.signature as string | undefined;
+        const nonce = ws.data.pendingNonce;
+        const publicKey = ws.data.pendingPublicKey;
+        const deviceId = ws.data.deviceId;
+        if (!signature || !nonce || !publicKey || !deviceId) {
+          ws.send(JSON.stringify({ type: 'error', message: 'no pending challenge' }));
+          return;
+        }
+        // Consume the nonce regardless of outcome (single-use).
+        ws.data.pendingNonce = null;
+        ws.data.pendingPublicKey = null;
+        if (!verifyNonce(nonce, signature, publicKey)) {
+          this.store.audit(deviceId, 'enroll_verify_failed', `fp=${fingerprint(publicKey)}`);
+          ws.send(JSON.stringify({ type: 'error', message: 'signature verification failed' }));
+          return;
+        }
+        ws.data.authenticated = true;
+        this.devices.set(deviceId, { ws, sessions: new Set() });
+        this.store.audit(deviceId, 'connect');
+        ws.send(JSON.stringify({ type: 'enroll_ok', deviceId }));
+        return;
+      }
       case 'session_register': {
         if (!ws.data.authenticated || !ws.data.deviceId) {
           ws.send(JSON.stringify({ type: 'error', message: 'not enrolled' }));
@@ -225,6 +269,24 @@ export class HubServer {
         const label = (msg.label as string | undefined) ?? null;
         if (!sessionId) {
           ws.send(JSON.stringify({ type: 'error', message: 'missing sessionId' }));
+          return;
+        }
+        // Ownership guard: don't let one device hijack a sessionId that
+        // another device already owns.
+        const existingOwner = sessionToDevice.get(sessionId);
+        if (existingOwner && existingOwner !== ws.data.deviceId) {
+          this.store.audit(
+            ws.data.deviceId,
+            'session_register_rejected',
+            `sid=${sessionId} owner=${existingOwner}`,
+          );
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: 'session owned by another device',
+              sessionId,
+            }),
+          );
           return;
         }
         this.store.upsertSession(sessionId, ws.data.deviceId, cwd, label);
@@ -260,18 +322,28 @@ export class HubServer {
         return;
       }
       case 'session_unregister': {
+        if (!ws.data.authenticated || !ws.data.deviceId) return;
         const sessionId = msg.sessionId as string | undefined;
         if (!sessionId) return;
+        // Only the owning device may unregister a session.
+        const owner = sessionToDevice.get(sessionId);
+        if (owner && owner !== ws.data.deviceId) {
+          this.store.audit(
+            ws.data.deviceId,
+            'session_unregister_rejected',
+            `sid=${sessionId} owner=${owner}`,
+          );
+          return;
+        }
         sessionToDevice.delete(sessionId);
         this.store.removeSession(sessionId);
-        if (ws.data.deviceId) {
-          const state = this.devices.get(ws.data.deviceId);
-          if (state) state.sessions.delete(sessionId);
-        }
+        const state = this.devices.get(ws.data.deviceId);
+        if (state) state.sessions.delete(sessionId);
         this.broadcast({ type: 'session_removed', sessionId });
         return;
       }
       case 'send_to_session': {
+        if (!ws.data.authenticated || !ws.data.deviceId) return;
         const sessionId = msg.sessionId as string | undefined;
         const text = msg.text as string | undefined;
         if (!sessionId || text === undefined) return;
@@ -289,6 +361,7 @@ export class HubServer {
         return;
       }
       case 'permission_response': {
+        if (!ws.data.authenticated || !ws.data.deviceId) return;
         const sessionId = msg.sessionId as string | undefined;
         const requestId = msg.requestId as string | undefined;
         const approved = msg.approved as boolean | undefined;
@@ -351,11 +424,15 @@ export class HubServer {
       const deviceId = ws.data.deviceId;
       if (deviceId) {
         const state = this.devices.get(deviceId);
-        if (state) {
+        // Only tear down if THIS socket is the current one for the device.
+        // A benign reconnect can register a new socket before the old
+        // one's close fires; without this check that stale close would
+        // evict the live connection and its sessions from routing.
+        if (state && state.ws === ws) {
           for (const sid of state.sessions) sessionToDevice.delete(sid);
           this.devices.delete(deviceId);
+          this.store.audit(deviceId, 'disconnect');
         }
-        this.store.audit(deviceId, 'disconnect');
       }
     } else {
       this.browsers.delete(ws);

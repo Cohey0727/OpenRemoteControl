@@ -1,30 +1,35 @@
 {
   "name": "open-rc",
   "version": "0.1.0",
-  "description": "Claude Code RemoteControl control plane — open, self-hostable, provider-agnostic.",
+  "description": "Pure WebSocket relay for Claude Code RemoteControl — open, self-hostable, provider-agnostic. No spawn.",
   "type": "module",
   "license": "MIT",
   "bin": {
     "open-rc": "./src/cli.ts"
   },
   "files": ["src", "ui", "README.md", "SECURITY.md", "LICENSE"],
-  "keywords": ["claude", "claude-code", "remote", "control-plane", "agent"],
+  "keywords": ["claude", "claude-code", "remote", "control-plane", "agent", "relay"],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "dev": "bun run --watch src/cli.ts serve --port 7322",
-    "capture": "bun run tools/capture.ts",
+    "start": "bun run src/cli.ts serve --port 7322",
+    "serve": "bun run src/cli.ts serve",
+    "hub": "bun run src/cli.ts hub",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "lint": "biome check .",
     "fmt": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "build": "bun run scripts/build.ts"
+    "build": "bun run scripts/build.ts",
+    "build-icons": "bun run scripts/build-icons.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
+    "@resvg/resvg-js": "^2.6.0",
     "@types/bun": "^1.1.0",
+    "playwright": "^1.61.1",
     "typescript": "^5.5.0"
   },
   "engines": {

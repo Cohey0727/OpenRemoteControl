@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateKeypair } from '../src/hub/crypto.ts';
+import { generateKeypair, signNonce } from '../src/hub/crypto.ts';
 import { HubServer } from '../src/hub/server.ts';
 
 const PORT = 7461;
@@ -60,7 +60,15 @@ async function connectDevice(): Promise<DeviceConn> {
     ws.addEventListener('message', (ev) => {
       const m = JSON.parse(ev.data as string);
       conn.inbox.push(m);
-      if (m.type === 'enroll_ok' && !conn.deviceId) {
+      if (m.type === 'challenge') {
+        // Answer the proof-of-possession challenge with a real signature.
+        ws.send(
+          JSON.stringify({
+            type: 'enroll_verify',
+            signature: signNonce(m.nonce as string, kp.privateKeyB64),
+          }),
+        );
+      } else if (m.type === 'enroll_ok' && !conn.deviceId) {
         conn.deviceId = m.deviceId as string;
         resolve();
       }

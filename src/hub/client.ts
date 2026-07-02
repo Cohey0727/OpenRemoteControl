@@ -3,8 +3,7 @@
  * and relay sessions + events between local WS clients and the hub.
  */
 
-import { randomUUID } from 'node:crypto';
-import { fingerprint, generateKeypair } from './crypto.ts';
+import { fingerprint, generateKeypair, signNonce } from './crypto.ts';
 
 export interface HubClientOptions {
   readonly hubUrl: string;
@@ -53,7 +52,11 @@ export async function startHubClient(opts: HubClientOptions): Promise<HubClientH
           type: string;
           [k: string]: unknown;
         };
-        if (msg.type === 'enroll_pending') {
+        if (msg.type === 'challenge') {
+          // Prove possession of the private key by signing the hub's nonce.
+          const signature = signNonce(msg.nonce as string, key.privateKeyB64);
+          ws?.send(JSON.stringify({ type: 'enroll_verify', signature }));
+        } else if (msg.type === 'enroll_pending') {
           // eslint-disable-next-line no-console
           console.error(
             `[hub] new device — approve at ${opts.hubUrl}${msg.pairUrl}\n` +
@@ -123,5 +126,3 @@ async function loadOrCreateKey(path: string): Promise<StoredKey> {
   await Bun.write(path, JSON.stringify(stored));
   return stored;
 }
-
-void randomUUID;

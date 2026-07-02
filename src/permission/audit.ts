@@ -35,6 +35,11 @@ async function resolveAuditPath(): Promise<string> {
   for (const p of candidates) {
     try {
       await mkdir(dirname(p), { recursive: true });
+      // mkdir(recursive) succeeds on an existing dir even when it is not
+      // writable, so probe with a real (empty) append. This creates the
+      // file if absent and throws if the path is not writable, letting us
+      // fall through to ./audit.jsonl instead of silently dropping lines.
+      await appendFile(p, '', 'utf8');
       resolvedPath = p;
       return p;
     } catch {

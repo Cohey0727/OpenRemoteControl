@@ -17,6 +17,9 @@ captures/
 .env
 .env.local
 
+# browser-automation debug artifacts (Playwright MCP)
+.playwright-mcp/
+
 # editor / OS
 .DS_Store
 .idea/
