@@ -350,6 +350,13 @@ fallback) closes it with a `done` frame.
   the Claude Code hook handler set. There is no `attach-tmux`, no
   `pipe`, no `client` — launching processes is out of scope (see
   Project goal).
+- Docker: `Dockerfile` + `docker-compose.yml` ship an all-in-one image
+  (base `oven/bun:1.3-slim`) that runs the CLI from source — serve by
+  default, `hub`/`tui` via args, state in the `/data` volume
+  (`XDG_DATA_HOME`), port published loopback-only by default. The
+  container is the relay half ONLY: no `claude`, no bridge, no hooks
+  inside it; `/attach-orc` runs on the host and dials the published
+  port. Do not bake a bridge or claude into the image.
 - PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
   and the icon PNGs are checked in as static files and served
   straight off disk. `scripts/build-icons.ts` is a maintainer-only

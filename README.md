@@ -53,6 +53,29 @@ bun run src/cli.ts serve --host 127.0.0.1 --port 7322
 
 That's the entire server. `open-rc serve` is a pure WebSocket relay.
 
+### Or run the relay in Docker (all-in-one)
+
+```bash
+docker compose up -d          # build + run; UI on http://127.0.0.1:7322
+# or, without compose:
+docker build -t open-rc .
+docker run -d -p 127.0.0.1:7322:7322 -v open-rc-data:/data open-rc
+```
+
+One image carries the whole CLI (`serve` is the default command; `hub`
+and `tui` ride the same image via `docker run open-rc hub …`). Mutable
+state — VAPID keys, push subscriptions, the audit log — lives in the
+`/data` volume, so the container is disposable. The published port is
+bound to `127.0.0.1` by default because the relay has no auth; widen
+it deliberately (see [`SECURITY.md`](./SECURITY.md)).
+
+The container never runs `claude` — it is the relay half only.
+`/attach-orc` (the bridge and the Claude Code hooks) runs on the host
+next to your `claude` and dials the published port, so the flow is
+identical: `docker compose up -d`, then `/attach-orc` inside your
+session. `make docker-serve` / `make docker-logs` / `make docker-stop`
+wrap the same thing.
+
 ## Drive a `claude` session from your browser
 
 open-rc **shares an already-running `claude` — it never starts one.**
@@ -527,7 +550,9 @@ still need to learn per provider.
 
 ## Requirements
 
-- **Bun** ≥ 1.3 ([install](https://bun.sh))
+- **Bun** ≥ 1.3 ([install](https://bun.sh)) — or **Docker**, if you
+  run the relay from the all-in-one image (the bridge side still
+  needs Bun on the host)
 - **Claude Code CLI** (`claude` on `PATH`) — required only on the
   machine where the user runs `claude`. The server does not need it.
 - A browser, for the UI
@@ -625,6 +650,10 @@ make typecheck         # tsc --noEmit
 make lint              # biome check
 make fmt               # biome format --write
 make verify            # typecheck + test (CI gate)
+make docker-build      # build the all-in-one Docker image
+make docker-serve      # run the relay via docker compose (detached)
+make docker-logs       # tail the Docker relay's logs
+make docker-stop       # stop the Docker relay (data volume survives)
 make build             # (DISTRIBUTION) cross-compile a single-binary for the current host
 make build-all         # (DISTRIBUTION) cross-compile all 5 target platforms
 make clean             # rm -rf dist

@@ -1,0 +1,24 @@
+# Keep the build context to what the image actually copies
+# (package.json / bun.lock / tsconfig.json / src / ui) plus nothing
+# heavy or secret.
+.git
+.github
+.claude
+node_modules
+dist
+captures
+.playwright-mcp
+.open-rc
+tests
+docs
+scripts
+commands
+*.md
+LICENSE
+Makefile
+biome.json
+bunfig.toml
+tsconfig.tsbuildinfo
+docker-compose.yml
+Dockerfile
+.dockerignore

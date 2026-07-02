@@ -1,0 +1,20 @@
+# open-rc relay — one-command startup:  docker compose up -d
+#
+# The published port is bound to 127.0.0.1 on purpose: the relay has
+# no authentication, so loopback-only mirrors `open-rc serve`'s
+# default. For LAN/VPS exposure change the mapping to "7322:7322" and
+# put TLS + auth in front (see SECURITY.md).
+services:
+  open-rc:
+    build: .
+    image: open-rc:latest
+    container_name: open-rc
+    ports:
+      - '127.0.0.1:7322:7322'
+    volumes:
+      # VAPID keys, push subscriptions, audit log (XDG_DATA_HOME=/data).
+      - open-rc-data:/data
+    restart: unless-stopped
+
+volumes:
+  open-rc-data:

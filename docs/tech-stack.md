@@ -349,6 +349,21 @@ symlinks `commands/attach-orc.md` into `~/.claude/commands/`.
 
 ---
 
+## Docker
+
+**Pick:** one all-in-one image (`Dockerfile`, base `oven/bun:1.3-slim`)
+that runs the CLI straight from source — the same no-build philosophy,
+containerized. `serve` is the default command; `hub`/`tui` reuse the
+image via command args. `XDG_DATA_HOME=/data` routes every piece of
+mutable state (VAPID keys, push DB, audit log) into a single volume;
+`docker-compose.yml` publishes `127.0.0.1:7322` (loopback, mirroring
+serve's own default) and names the volume. Health checks probe
+`/health` with Bun itself, so the image needs no curl. The container
+is the relay half only — `claude`, the `attach-orc` bridge, and the
+hooks all stay on the host and dial the published port.
+
+---
+
 ## Build & distribution
 
 **Pick (server runtime):** launch directly from TypeScript via Bun.

@@ -163,6 +163,27 @@ dev: logo relay-diagram serve-hints ## Start the server in --watch mode (auto-re
 	@bun run --watch $(BIN) serve --host $(HOST) --port $(PORT)
 
 # ---------------------------------------------------------------------------
+# Docker (all-in-one image: serve by default, hub/tui via args)
+# ---------------------------------------------------------------------------
+
+.PHONY: docker-build
+docker-build: ## Build the all-in-one Docker image (open-rc:latest)
+	docker build -t open-rc .
+
+.PHONY: docker-serve
+docker-serve: logo relay-diagram serve-hints ## Run the relay in Docker (loopback :7322, data volume)
+	docker compose up -d --build
+	@printf '%s\n' '' ' $(AMBER)◉$(OFF) $(DIM)container$(OFF)  open-rc $(DIM)(docker compose)$(OFF) — $(CYAN)make docker-logs$(OFF) / $(CYAN)make docker-stop$(OFF)' ''
+
+.PHONY: docker-logs
+docker-logs: ## Tail the Docker relay's logs
+	docker compose logs -f
+
+.PHONY: docker-stop
+docker-stop: ## Stop and remove the Docker relay (data volume survives)
+	docker compose down
+
+# ---------------------------------------------------------------------------
 # Quality gates
 # ---------------------------------------------------------------------------
 
