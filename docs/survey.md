@@ -473,10 +473,17 @@ Why this pivot:
   `claude --bare` themselves, with whatever `ANTHROPIC_BASE_URL`
   setup they already use.
 
-We still don't chase `barjakuzu`'s `/remote-control` handoff or
-`permissionnine9`'s PTY mirroring — those require either kill-and-
-swap (which we banned) or unstructured TTY mirroring (which loses
-the JSONL framing the user owns the bridge for).
+We still don't chase `barjakuzu`'s `/remote-control` handoff (it needs
+kill-and-swap, which we banned).
+
+> **Update (2026-07-02):** we DID adopt a variant of `permissionnine9`'s
+> PTY/TTY mirroring, after lifting the ban — but as an *optional
+> client-side* command (`attach-tmux`), not in the server. It mirrors an
+> existing tmux `claude` via `capture-pane`/`send-keys` and relays the
+> screen as `screen` frames. The primary path (`attach-orc`) still uses
+> structured stream-json; tmux mirroring is the opt-in way to drive a
+> `claude` you already started in a terminal. The server never touches a
+> terminal.
 
 ---
 

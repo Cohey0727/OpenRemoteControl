@@ -15,18 +15,24 @@
  *                 `/ws` client (like the browser) — attaches to a
  *                 clientId and shares that ONE `claude` with the
  *                 browser: prompts and stream flow both ways.
+ *   attach-tmux   Mirror an EXISTING interactive `claude` running in a
+ *                 tmux pane into the browser: polls `capture-pane` for
+ *                 output, delivers browser prompts with `send-keys`.
+ *                 Spawns no `claude` and never kills the pane.
  *
  * Spawn discipline:
  *   - `serve`, `hub`, and `tui` NEVER spawn anything. `serve`/`hub` are
  *     byte-pass-through relays; `tui` is a WebSocket client. Their
  *     process trees contain only themselves.
- *   - `attach-orc` is the ONE place in the project that calls `Bun.spawn`
- *     for `claude`. It runs as a separate process under the user's
- *     terminal, owns the subprocess, and translates its stream-json
- *     stdio into /agent frames. The server remains spawn-free.
+ *   - `attach-orc` is the ONE place that calls `Bun.spawn` for `claude`.
+ *     `attach-tmux` calls `Bun.spawn` too, but only for `tmux` (never
+ *     `claude`): it drives a `claude` the user already started. Both
+ *     run as separate client-side processes; the server stays
+ *     spawn-free and touches no terminal.
  */
 
 import { parseAttachFlags, runAttach } from './cli/attach-orc.ts';
+import { parseTmuxFlags, runAttachTmux } from './cli/attach-tmux.ts';
 import { parseFlags } from './cli/flags.ts';
 import { parseTuiFlags, runTui } from './cli/tui.ts';
 import { HubServer } from './hub/server.ts';
@@ -105,8 +111,15 @@ if (command === 'serve' || command === '') {
 } else if (command === 'tui') {
   const tuiFlags = parseTuiFlags(process.argv.slice(3));
   await runTui(tuiFlags);
+} else if (command === 'attach-tmux') {
+  const tmuxFlags = parseTmuxFlags(process.argv.slice(3));
+  console.log(`[attach-tmux] server:   ${tmuxFlags.server}`);
+  console.log(`[attach-tmux] label:    ${tmuxFlags.label}`);
+  console.log(`[attach-tmux] target:   ${tmuxFlags.target ?? '(auto-detect)'}`);
+  console.log(`[attach-tmux] interval: ${tmuxFlags.intervalMs}ms`);
+  await runAttachTmux(tmuxFlags);
 } else {
   console.error(`unknown command: ${command}`);
-  console.error('available commands: serve, hub, attach-orc, tui');
+  console.error('available commands: serve, hub, attach-orc, tui, attach-tmux');
   process.exit(2);
 }

@@ -3,9 +3,10 @@
 # Thin convenience layer over the npm scripts in package.json. Run
 # `make help` for the list.
 #
-# The Makefile exposes only what the CLI does: `serve` and `hub`. There
-# is no `make attach`, no `make client`, no `make spawn`. The user runs
-# `claude` themselves and brings their own bridge.
+# The Makefile mirrors the CLI: `serve`/`hub` (spawn-free relays),
+# `attach-orc` (spawns a fresh `claude`), and `attach-tmux` (mirrors a
+# `claude` you already started in tmux). There is no `make client`, no
+# `make spawn`. The server itself never spawns anything.
 
 SHELL := /bin/sh
 .SHELLFLAGS := -eu -c
@@ -135,6 +136,13 @@ attach-orc: ## Attach a local claude subprocess to the running serve (Phase 7.5)
 	@echo "forwards its stream-json stdio to ws://$(HOST):$(PORT)/agent."
 	@echo "The 'serve' process itself does NOT spawn anything."
 	bun run $(BIN) attach-orc --server ws://$(HOST):$(PORT)/agent
+
+.PHONY: attach-tmux
+attach-tmux: ## Mirror an existing tmux claude into the running serve (TARGET=<pane>)
+	@echo "Note: 'attach-tmux' mirrors a claude you already started in tmux."
+	@echo "It spawns 'tmux' (never 'claude') and never kills the pane."
+	@echo "Pass TARGET=<pane> or omit to auto-detect the sole claude pane."
+	bun run $(BIN) attach-tmux --server ws://$(HOST):$(PORT)/agent $(if $(TARGET),--target $(TARGET),)
 
 .PHONY: dev
 dev: ## Start the server in --watch mode (auto-restart on file change)

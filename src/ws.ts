@@ -102,7 +102,11 @@ export interface WsHandlerDeps {
   readonly broadcastServerMessage: (frame: ServerBrowserMessage) => void;
   /** Append a frame to the client's bounded in-memory replay buffer. */
   readonly recordHistory: (clientId: string, frame: z.infer<typeof RelayedMessage>) => void;
-  /** Replay the client's buffered history to one just-attached browser. */
+  /** Remember the latest terminal screen (attach-tmux) for replay on
+   *  attach. Kept out of `history` — only the newest matters. */
+  readonly recordScreen: (clientId: string, text: string) => void;
+  /** Replay the client's buffered history (and latest screen, if any)
+   *  to one just-attached browser. */
   readonly replayHistory: (clientId: string, browser: ServerWebSocket<WsData>) => void;
   /**
    * Optional: fired when a bridge sends `done` — used to schedule web
@@ -308,6 +312,7 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
     broadcastToBrowsers,
     broadcastServerMessage,
     recordHistory,
+    recordScreen,
     onClientDone,
   } = deps;
 
@@ -403,6 +408,18 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         setBridgeStatus(clientId, msg.status);
         broadcastServerMessage({ type: 'clients_changed', clients: deps.listClients() });
         return;
+      case 'screen': {
+        // A terminal snapshot from the `attach-tmux` bridge. Broadcast
+        // it live, but do NOT flip busy status (a redraw isn't a turn —
+        // otherwise a mirrored pane would sit "busy" forever, since
+        // tmux mirroring never sends `done`) and do NOT push it into
+        // `history` (only the latest screen matters). Stash it as the
+        // client's latest screen so a browser attaching while the pane
+        // is static still gets the current terminal on attach.
+        broadcastToBrowsers(clientId, { ...msg, clientId } as z.infer<typeof RelayedMessage>);
+        recordScreen(clientId, msg.text);
+        return;
+      }
       case 'text':
       case 'text_delta':
       case 'thinking':
@@ -416,11 +433,11 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         // sidebar dot updates without a broadcast on every single frame.
         const becameBusy = touchBridge(clientId);
         broadcastToBrowsers(clientId, tagged);
-        // Buffer conversation frames for replay-on-attach, but not the
-        // transient permission_request (a stale replayed prompt would
-        // pop a modal for an already-answered request) and not streaming
-        // text_delta fragments (the final `text` frame carries the same
-        // content; replaying both would render the reply twice).
+        // Buffer conversation frames for replay-on-attach, but NOT:
+        //  - permission_request (a stale replayed prompt would pop a
+        //    modal for an already-answered request),
+        //  - text_delta (the final `text` frame carries the same
+        //    content; replaying both would render the reply twice).
         if (msg.type !== 'permission_request' && msg.type !== 'text_delta') {
           recordHistory(clientId, tagged);
         }

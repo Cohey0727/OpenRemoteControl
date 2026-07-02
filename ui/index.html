@@ -527,6 +527,21 @@
         0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
         30% { opacity: 1; transform: translateY(-3px); }
       }
+
+      /* Terminal mirror (attach-tmux): a monospace dump of the tmux
+         pane. Kept pre-formatted; horizontal scroll for wide panes so a
+         160-col claude TUI isn't reflowed into garbage. */
+      .term-mirror {
+        margin: 0;
+        padding: 0.4rem 0;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.35;
+        color: var(--fg);
+        white-space: pre;
+        overflow-x: auto;
+        tab-size: 4;
+      }
       .msg.text .markdown :first-child { margin-top: 0; }
       .msg.text .markdown :last-child  { margin-bottom: 0; }
       .msg.text .markdown h1, .msg.text .markdown h2,

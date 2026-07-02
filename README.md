@@ -180,9 +180,36 @@ open-rc tui --server ws://192.168.1.10:7322/ws   # or a remote serve
 Inside it, type to send a prompt; `/allow` or `/deny` answer a
 permission request; `/clients`, `/attach <id>`, `/quit`, `/help` do the
 obvious things. (Under the hood: `attach-orc` owns the single `claude`;
-`tui` and the browser are both just clients of `serve`. It is *not*
-live-mirroring a native `claude` TUI — that would need the private
-RemoteControl bridge open-rc deliberately avoids.)
+`tui` and the browser are both just clients of `serve`.)
+
+### Mirror an existing terminal `claude` (attach-tmux)
+
+`attach-orc` and `tui` share a *fresh headless* `claude` that
+`attach-orc` spawns. If instead you want to drive the **interactive
+`claude` you already started in a terminal** — from the browser, with
+its live TUI mirrored — run that `claude` inside tmux and bridge the
+pane:
+
+```bash
+# 1. run claude inside tmux (any session/window name)
+tmux new -s work
+#    …then inside: claude
+
+# 2. from anywhere, bridge that pane into open-rc
+open-rc attach-tmux --target work
+#    omit --target to auto-detect the sole claude pane
+```
+
+The browser then shows the pane's live screen (polled via
+`tmux capture-pane`) and your browser prompts are typed into it with
+`tmux send-keys` — so the conversation continues in your real terminal
+session, visible in both places. `attach-tmux` spawns no `claude` and
+**never kills the pane**: quitting the bridge (Ctrl-C) leaves your
+terminal `claude` running untouched. Permission dialogs and slash
+commands work by sending the key/text as a normal prompt (e.g. send
+`1` to pick the first option), since the mirror forwards keystrokes
+verbatim. Wide TUIs scroll horizontally in the browser; this is a
+screen mirror, not a reflowing chat transcript.
 
 ### Streaming, loading state, and turn timestamps
 
@@ -295,15 +322,26 @@ open-rc tui
   --server           <u>   /ws WebSocket URL (default from ORC_BASE_URL,
                            else ws://127.0.0.1:7322/ws)
   --client-id        <s>   Session to attach to (auto-picks when omitted)
+
+open-rc attach-tmux
+  --server           <u>   /agent WebSocket URL (default from ORC_BASE_URL,
+                           else ws://127.0.0.1:7322/agent)
+  --target           <t>   tmux target pane (e.g. mysession, sess:1.0, %3);
+                           auto-detects the sole claude pane when omitted
+  --label            <s>   Sidebar label (default tmux:<target>@hostname)
+  --client-id        <s>   Explicit clientId (default random UUID)
+  --interval         <ms>  capture-pane poll interval (default 500, floor 100)
+  # env: ORC_TMUX_BIN   override the tmux binary (tests only)
 ```
 
 That is the entire CLI surface. There is no `open-rc client`. There
 is no `open-rc spawn`.
 
-> Note: four commands total — `serve` and `hub` (spawn-free relays),
-> `attach-orc` (the only command that calls `Bun.spawn`, for `claude`),
-> and `tui` (a spawn-free `/ws` client that shares a session with the
-> browser).
+> Note: five commands total — `serve` and `hub` (spawn-free relays),
+> `attach-orc` (the only command that `Bun.spawn`s `claude`), `tui` (a
+> spawn-free `/ws` client that shares a session with the browser), and
+> `attach-tmux` (mirrors an existing tmux `claude`; `Bun.spawn`s only
+> `tmux`, never `claude`, and never kills the pane).
 
 ---
 
@@ -359,10 +397,11 @@ sidebar repopulates.
 
 ```
 src/
-├── cli.ts                       # arg parsing, command dispatch (serve, hub, attach-orc, tui)
+├── cli.ts                       # arg parsing, dispatch (serve, hub, attach-orc, tui, attach-tmux)
 ├── cli/
 │   ├── flags.ts                 # shared --k=v / kebab→camel flag parser
-│   ├── attach-orc.ts            # spawns claude, bridges stream-json ↔ /agent (only Bun.spawn)
+│   ├── attach-orc.ts            # spawns claude, bridges stream-json ↔ /agent (only claude spawn)
+│   ├── attach-tmux.ts           # mirrors an existing tmux claude (capture-pane ↔ send-keys)
 │   └── tui.ts                   # terminal /ws client — shares a session with the browser
 ├── serve.ts                     # Bun.serve entry: HTTP + WS(/ws) + WS(/agent) + static UI
 ├── ws.ts                        # WS handlers on /ws (browsers) and /agent (bridges)
@@ -536,9 +575,11 @@ still need to learn per provider.
 
 **Phases 1–7 complete.** `open-rc serve` is a pure WebSocket relay.
 It does not spawn `claude`. It does not manage `claude`. The CLI
-exposes three commands: `serve`, `hub`, and `attach-orc` — and only
-`attach-orc` (the user-run bridge) ever spawns `claude`; `serve` and
-`hub` are spawn-free.
+exposes five commands: `serve`, `hub`, `attach-orc`, `tui`, and
+`attach-tmux`. Only `attach-orc` (a user-run bridge) spawns `claude`;
+`attach-tmux` spawns only `tmux` to mirror a `claude` you already
+started; `serve` and `hub` are spawn-free relays and `tui` is a
+spawn-free `/ws` client.
 
 | Phase | What                                     | Status |
 | ----- | ---------------------------------------- | ------ |

@@ -143,22 +143,28 @@ because the moment we ship a bridge, we'd be tempted to spawn
   clients all attach to the same clientId, so a prompt from any of
   them is echoed to all (the server broadcasts a `user` frame on
   `send`) and the stream fans out to all. This is how "drive from the
-  browser AND the CLI" is one conversation. It is NOT the forbidden
-  live-share of a native `claude` TUI (that would need PTY hijack or
-  the private RemoteControl) — the shared session lives in the
-  `attach-orc`-owned `claude`, and `tui` is just another window onto
-  it. Do not confuse `tui` with a "bridge command": it never touches
-  `claude`'s stdio.
+  browser AND the CLI" is one conversation. It is NOT a live-share of a
+  native `claude` TUI (that would need PTY bridging — now permitted via
+  a separate client-side path — or the private RemoteControl) — the
+  shared session lives in the `attach-orc`-owned `claude`, and `tui` is
+  just another window onto it. Do not confuse `tui` with a "bridge
+  command": it never touches `claude`'s stdio.
 - **No reverse-engineering the bridge protocol.** open-rc talks to
   the public `--input-format stream-json --output-format stream-json`
   mode only. The private RemoteControl protocol and
   `wss://bridge.claudeusercontent.com` are off-limits.
-- **No TTY splicing / PTY hijacking.** open-rc does not attach to
-  other processes' controlling terminals, does not use
-  `TIOCSTI`/`TIOCSWINSZ` on someone else's pty, does not
-  reverse-engineer claude's IPC. A `claude` running in a terminal is
-  a black box; open-rc only ever sees whatever frames a user-owned
-  bridge chooses to send over a WebSocket.
+- **PTY bridging to an existing `claude` is allowed client-side (was
+  banned).** Attaching to a user-owned interactive `claude`'s
+  controlling terminal — reading its PTY output and writing prompts to
+  its stdin, incl. `TIOCSTI`/`TIOCSWINSZ` and whatever process-table
+  lookup is needed to find that tty — is permitted, to mirror a session
+  the user already started in a terminal into the browser. It is the
+  user's machine and the user's own process. This MUST live in a
+  client-side command (the `attach-orc` family), NEVER in `serve`,
+  which stays a pure relay that spawns nothing, walks no process table,
+  and touches no terminal. Reverse-engineering the private
+  RemoteControl protocol / `wss://bridge.claudeusercontent.com` is a
+  different line and remains off-limits (see above).
 - **History = replay the live stream it's already relaying, in memory
   only.** The server keeps a bounded, per-connected-client ring buffer
   of the conversation frames it relays (`BridgeConn.history`, cap
@@ -300,12 +306,17 @@ want one. open-rc does not help with that.
 - Documentation follow-up is mandatory when code changes — update
   README, docs/roadmap, docs/architecture, docs/survey,
   docs/tech-stack, SECURITY.md, and this file in the same task.
-- The CLI exposes four commands: `serve`, `hub`, `attach-orc`, and
-  `tui`. Only `attach-orc` may call `Bun.spawn` (for `claude`).
-  `serve` and `hub` are spawn-free relays; `tui` is a spawn-free
-  `/ws` client. There is no bare `attach` command (the historical
-  `attach` was renamed to `attach-orc`). There is no `pipe`, no
-  `client`, no `spawn`.
+- The CLI exposes five commands: `serve`, `hub`, `attach-orc`, `tui`,
+  and `attach-tmux`. `serve` and `hub` are spawn-free relays; `tui` is
+  a spawn-free `/ws` client. `attach-orc` is the only place that
+  `Bun.spawn`s `claude`. `attach-tmux` `Bun.spawn`s only `tmux` (never
+  `claude`): it mirrors an EXISTING interactive `claude` the user
+  already started in a tmux pane — polling `capture-pane` for output
+  (relayed as `screen` frames) and delivering browser prompts with
+  `send-keys`. It NEVER kills the pane (the session is the user's). The
+  server stays spawn-free and touches no terminal. There is no bare
+  `attach` command (the historical `attach` was renamed to
+  `attach-orc`). There is no `pipe`, no `client`, no `spawn`.
 - PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
   and the icon PNGs are checked in as static files and served
   straight off disk. `scripts/build-icons.ts` is a maintainer-only

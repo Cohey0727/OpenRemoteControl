@@ -187,9 +187,12 @@ Putting spawn outside open-rc is deliberate:
 - **No `sessions.json` on the server.** The server doesn't need to
   know what cwds are alive; the user does. The server is stateless
   beyond the live client map.
-- **No CLI to maintain.** `open-rc` ships exactly two commands:
-  `serve` and `hub`. The CLI surface area does not grow when the
-  user invents a new bridge shape.
+- **The server's surface doesn't grow.** The server ships exactly
+  `serve` and `hub` and stays a pure relay no matter what bridge shape
+  the user invents. The client-side helpers (`attach-orc`,
+  `attach-tmux`, `tui`) are separate processes that speak the same WS
+  protocols; adding them never touches the server or its no-spawn
+  property.
 
 ---
 
@@ -592,7 +595,9 @@ wait for them to re-register.
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
 | **`open-rc serve`**  | The pure WS relay. The only thing open-rc ships (besides `hub`).   |
 | **Hub**              | `open-rc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. open-rc does not ship one. |
+| **Bridge**           | User-owned process that pipes `claude`'s stdio to a WebSocket. `attach-orc` is the reference one. |
+| **`attach-tmux`**    | Client-side command mirroring an EXISTING tmux `claude`: polls `capture-pane` → `screen` frames, sends prompts via `send-keys`. Spawns only `tmux`; never kills the pane. |
+| **`screen` frame**   | A terminal-screen snapshot (from `attach-tmux`). Relayed live, kept as the client's one `latestScreen` (not in history), replayed on attach. |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |

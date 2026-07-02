@@ -383,8 +383,12 @@ Reaffirmed constraints:
 
 - `serve`/`hub` stay spawn-free; `tui` is a spawn-free `/ws` client;
   `attach-orc` remains the only `Bun.spawn`.
-- No PTY/TTY hijack and no native-TUI mirroring — the shared session
-  lives entirely in the `attach-orc`-owned `claude`.
+- The shared session lives entirely in the `attach-orc`-owned
+  `claude`. (This phase originally also banned PTY/TTY hijack and
+  native-TUI mirroring; that ban was **lifted 2026-07-02** — client-
+  side PTY bridging to an existing `claude` is now permitted, so a
+  session started in a terminal can be mirrored into the browser.
+  `serve` still stays a pure relay that touches no terminal.)
 
 ### Phase 7.8 — Session URLs + history-on-attach — ✓ DONE
 
@@ -449,6 +453,57 @@ one was.
 - Lighthouse PWA installability audit passes; iOS home-screen install
   works end-to-end; the shell loads after `Network → Offline` reload;
   Web Push remains functional (the SW's push handler is preserved).
+
+### Phase 8.2 — Streaming, loading state, turn timestamps — ✓ DONE
+
+**Scope.**
+
+- `attach-orc` passes `--include-partial-messages`; its translator maps
+  `stream_event` text deltas to a new `text_delta` frame.
+- Server relays `text_delta` live but never records it to history (the
+  final `text` frame carries the whole reply).
+- SPA renders the streaming partial in a live region with a caret, and
+  a typing indicator while busy with nothing streamed yet.
+- Server stamps `done` frames with `ts` (epoch ms) so turn dividers
+  show a wall-clock time that survives history replay; `tui` shows it too.
+- IME guard on the composer (`isComposing` / keyCode 229) so a
+  conversion-commit Enter doesn't send.
+
+### Phase 8.3 — `attach-tmux`: mirror an existing terminal `claude` — ✓ DONE
+
+**Goal.** Drive the interactive `claude` the user already started in a
+terminal (not a fresh headless one) from the browser, with its live TUI
+mirrored. Enabled by lifting the PTY/TTY-hijack ban (client-side only).
+
+**Scope.**
+
+- `src/cli/attach-tmux.ts` — new client-side command. Registers on
+  `/agent` like `attach-orc`, but instead of spawning `claude`: polls
+  `tmux capture-pane -p -t <target>` on an interval and relays the
+  screen as a `screen` frame on change; delivers browser `prompt`
+  frames with `tmux send-keys -l -- <text>` + `Enter`. Auto-detects the
+  sole claude pane when `--target` is omitted. Fails fast on first
+  register (like `attach-orc`). **Never** kills or signals the pane.
+- `screen` frame added to the protocol (`BridgeFrame` /
+  `RelayedMessage` / `ServerBrowserMessage`). Relayed live; NOT flipped
+  to busy (a redraw isn't a turn) and NOT pushed into the history ring
+  — instead the server keeps `BridgeConn.latestScreen` (one string) and
+  replays it on attach so a late joiner sees a static pane too.
+- SPA: a `screen` renders the client as a monospace terminal mirror
+  (`<pre class="term-mirror">`, horizontal scroll for wide panes)
+  instead of the conversation cards.
+- `serve` stays a pure relay: all tmux interaction is in the
+  client-side `attach-tmux` process. `ORC_TMUX_BIN` overrides tmux for
+  tests.
+
+**Definition of done — ✓ met.**
+
+- Verified end-to-end against a real `claude` in tmux: the browser
+  shows the live TUI (`capture-pane`), and a browser prompt reaches the
+  real session (`send-keys`) with the reply appearing in both the
+  terminal and the browser mirror. `tests/attach-tmux-cli.test.ts`
+  covers flag parsing, screen normalization, and the round-trip through
+  a mock tmux.
 
 Candidate items (prioritized at the start of the phase):
 
