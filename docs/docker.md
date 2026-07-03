@@ -6,13 +6,17 @@ the **relay half only**: `claude`, the `/attach-orc` bridge, and the
 Claude Code hooks always run on the host (or wherever your `claude`
 lives) and dial the container's published port.
 
-```
-┌─────────────────────────┐        ┌──────────────────────────────────┐
-│ Docker container        │        │ Host (your machine)              │
-│  open-rc serve          │◀──WS──▶│  claude  +  /attach-orc bridge   │
-│  UI · /ws · /agent      │        │  browser → http://127.0.0.1:7322 │
-│  state → /data volume   │        └──────────────────────────────────┘
-└─────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph container["Docker container"]
+        serve["open-rc serve<br/>UI · /ws · /agent"] --> data[("/data volume<br/>(VAPID · push · audit)")]
+    end
+    subgraph host["Host (your machine)"]
+        claude["claude + /attach-orc bridge"]
+        browser["browser → http://127.0.0.1:7322"]
+    end
+    claude <-- WS --> serve
+    browser <-- WS --> serve
 ```
 
 ---

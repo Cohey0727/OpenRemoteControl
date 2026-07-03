@@ -158,9 +158,17 @@ PTY, no tmux. The bridge only reads a file the session already writes
 and exchanges frames with `serve`; the hooks only answer the hook
 callbacks Claude Code itself makes.
 
-```
-you type in the terminal ──► transcript JSONL ──► attach-orc ──► serve ──► browser/tui
-browser sends a prompt   ──► serve ──► attach-orc ──► queue file ──► Stop hook ──► session
+```mermaid
+flowchart LR
+    terminal["you type in the terminal"] --> jsonl["transcript JSONL"]
+    jsonl -- tail --> bridge["attach-orc"]
+    bridge -- frames --> serve["serve"]
+    serve --> viewers["browser / tui"]
+    viewers -- send --> serve
+    serve -- prompt --> bridge
+    bridge -- append --> queue["queue file"]
+    queue -- "Stop hook" --> session["session"]
+    session -- writes --> jsonl
 ```
 
 Stop sharing by killing the background bridge task (or just end the
@@ -350,46 +358,25 @@ That is the entire CLI surface. There is no `open-rc client` and no
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph local["LOCAL MACHINE (default)"]
+        browser["Browser (SPA)"] <-- "WS /ws · frames" --> serve["open-rc serve<br/>(pure relay)"]
+        bridge["bridge — /attach-orc, or your own<br/>(websocat, a small Bun script, anything)"] <-- "WS /agent" --> serve
+        claude["claude<br/>(user's process, user started it)"] --- bridge
+    end
 ```
-                       LOCAL MACHINE (default)
-┌────────────────────────────────────────────────────────────────────┐
-│                                                                    │
-│   ┌──────────────┐    WS(/ws)    ┌──────────────┐                  │
-│   │  Browser     │◀────────────▶│ open-rc serve│                  │
-│   │  (SPA)       │    frames    │ (pure relay) │                  │
-│   └──────────────┘              └──────────────┘                  │
-│                                          ▲                         │
-│                                          │ WS (any client)         │
-│                                  ┌───────┴─────────────┐           │
-│                                  │ user-owned bridge  │           │
-│                                  │ (e.g. websocat, a  │           │
-│                                  │  small Bun script, │           │
-│                                  │  tmux, anything)   │           │
-│                                  └───────┬─────────────┘           │
-│                                          │ stdio pipes             │
-│                                  ┌───────┴─────────────┐           │
-│                                  │ claude             │           │
-│                                  │  (user's process,  │           │
-│                                  │   user started it) │           │
-│                                  └─────────────────────┘           │
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
 
-                       LAN / VPS (alternative)
-┌──────────────┐                              ┌──────────────────┐
-│  Browser     │─── WS(/ws) ────────────────▶│  open-rc serve   │
-│  (phone)     │                              │  (any host)      │
-└──────────────┘                              └────────▲─────────┘
-                                                        │ WS (any client)
-                                                ┌───────┴─────────────┐
-                                                │ user-owned bridge  │
-                                                │ on VPS or laptop   │
-                                                └───────┬─────────────┘
-                                                        │ stdio
-                                                ┌───────┴─────────────┐
-                                                │ claude             │
-                                                │  (user's process)  │
-                                                └─────────────────────┘
+```mermaid
+flowchart TB
+    subgraph remote["LAN / VPS (alternative)"]
+        serve2["open-rc serve<br/>(any host)"]
+    end
+    phone["Browser (phone)"] -- "WS /ws" --> serve2
+    subgraph machine["your machine"]
+        claude2["claude (user's process)"] --- bridge2["bridge<br/>(/attach-orc or user-owned)"]
+    end
+    bridge2 -- "WS /agent" --> serve2
 ```
 
 The server is stateless beyond an in-memory map of currently-

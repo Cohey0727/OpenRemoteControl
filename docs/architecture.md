@@ -63,23 +63,15 @@ to know about the model API.
 
 The control plane has three roles. Only one of them is open-rc.
 
-```
-┌──────────────┐  WS(/ws)   ┌─────────────────┐  WS(arbitrary)  ┌────────────────────┐
-│   Browser    │◀─────────▶│  open-rc serve   │◀───────────────▶│ user-owned bridge   │
-│   (SPA)      │            │  (pure relay)    │                 │ (whatever pipes     │
-└──────────────┘            └─────────────────┘                 │  claude's stdio to  │
-        ▲                            ▲                        │  a WebSocket)       │
-        │           same machine     │                        └──────────┬──────────┘
-        │           in default setup │                                   │ stdio pipes
-        │                           │                                   │ (user owns)
-        │                           │                                   ▼
-        │                                                     ┌─────────────────┐
-        │                                                     │ claude          │
-        │                                                     │  (user's        │
-        │                                                     │   process)      │
-        │                                                     └─────────────────┘
-        │
-        └── mobile, LAN, Tailscale, SSH tunnel, or VPS — your call
+```mermaid
+flowchart LR
+    browser["Browser (SPA)<br/>local, mobile, LAN, Tailscale,<br/>SSH tunnel, or VPS — your call"]
+    serve["open-rc serve<br/>(pure relay)"]
+    bridge["bridge<br/>attach-orc (transcript+hooks) or<br/>user-owned (pipes claude's stdio)"]
+    claude["claude<br/>(user's process)"]
+    browser <-- "WS /ws" --> serve
+    serve <-- "WS /agent" --> bridge
+    bridge -. "reads transcript / owns stdio<br/>(user's side, never open-rc's)" .-> claude
 ```
 
 ### 3.1 `open-rc serve` — the relay
@@ -205,12 +197,18 @@ Keeping process startup outside open-rc is deliberate:
 `/attach-orc`, typed inside a running interactive Claude Code session,
 shares THAT session:
 
-```
-session → viewers   transcript JSONL (~/.claude/projects/<munged cwd>/<session>.jsonl)
-                    └─ attach-orc: replay (history) + tail (live) → /agent frames
-viewers → session   browser/tui `send` → serve `prompt` → attach-orc
-                    └─ queue.ndjson under ~/.open-rc/attach/<sessionId>/
-                       └─ open-rc hook stop|prompt (Claude Code hooks) → delivered
+```mermaid
+flowchart LR
+    subgraph out["session → viewers"]
+        jsonl["transcript JSONL<br/>~/.claude/projects/&lt;munged cwd&gt;/&lt;session&gt;.jsonl"]
+        ao1["attach-orc<br/>replay (history) + tail (live)"]
+        jsonl --> ao1 -- "/agent frames" --> serve1["serve"]
+    end
+    subgraph back["viewers → session"]
+        serve2["serve"] -- prompt --> ao2["attach-orc"]
+        ao2 --> q["queue.ndjson<br/>~/.open-rc/attach/&lt;sessionId&gt;/"]
+        q -- "open-rc hook stop|prompt<br/>(Claude Code hooks)" --> sess["session"]
+    end
 ```
 
 Components:

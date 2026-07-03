@@ -36,18 +36,14 @@ between the browser and the CLI … not by spawning"):
   hooks deliver queued browser prompts back into the session at turn
   boundaries (browser→session). It never touches the process.
 
-```
-┌──────────┐ WS(/ws) ┌───────────────┐ WS(/agent) ┌──────────────────────┐
-│ Browser  │◀───────▶│ open-rc serve │◀──────────▶│ open-rc attach-orc   │
-│ SPA/tui  │ frames  │ (pure relay)  │  frames    │ (transcript bridge)  │
-└──────────┘         └───────────────┘            └──────┬───────▲───────┘
-                                                   tails │       │ queue file
-                                                         ▼       │ drained by
-                                              transcript JSONL   │ Stop hook
-                                              (written by the    │
-                                               user's claude) ───┘
-                                              claude = user's process,
-                                              never touched by open-rc
+```mermaid
+flowchart LR
+    viewers["Browser SPA / tui"] <-- "WS /ws · frames" --> serve["open-rc serve<br/>(pure relay)"]
+    serve <-- "WS /agent · frames" --> bridge["open-rc attach-orc<br/>(transcript bridge)"]
+    bridge -- "tails (read-only)" --> jsonl["transcript JSONL"]
+    bridge -- appends --> queue["queue.ndjson"]
+    queue -- "drained by the Stop hook" --> claude["claude<br/>(user's process —<br/>never touched by open-rc)"]
+    claude -- writes --> jsonl
 ```
 
 A user-authored stdio bridge (pipe a stream-json `claude` to `/agent`)
@@ -352,6 +348,9 @@ fallback) closes it with a `done` frame.
   README, docs/roadmap, docs/architecture, docs/survey,
   docs/tech-stack, docs/docker, docs/deploy, SECURITY.md, and this
   file in the same task.
+- Architecture diagrams in docs are written in **Mermaid**
+  (```` ```mermaid ```` fenced blocks; requested 2026-07-03). ASCII
+  art is reserved for terminal output (the Makefile banner).
 - **Commit every change immediately, without being asked, and push.**
   After any substantive edit (once lint/typecheck/tests are green),
   `git add -A && git commit` and `git push` right away — never leave

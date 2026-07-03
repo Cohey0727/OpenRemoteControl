@@ -10,11 +10,10 @@ In every layout the split is the same: **the relay runs in the cloud;
 the machine where your session lives** and dial the relay's public
 URL. Your phone/browser opens the same URL.
 
-```
-phone / browser ──wss──▶ ┌──────────────────┐ ◀──wss── your machine
-                         │  open-rc serve    │          claude + /attach-orc
-                         │  (one container)  │
-                         └──────────────────┘
+```mermaid
+flowchart LR
+    phone["phone / browser"] -- wss --> serve["open-rc serve<br/>(one container, in the cloud)"]
+    machine["your machine<br/>claude + /attach-orc"] -- wss --> serve
 ```
 
 ---
