@@ -868,9 +868,11 @@ function messageView(_cid: string, m: UiMessage): HTMLElement {
       return el;
     }
     case 'tool_result':
+      // Collapsed by default, like tool_use/thinking — the machine's
+      // output is a log line, not the conversation.
       return h(
         'details',
-        { class: 'msg tool_result', open: 'open' },
+        { class: 'msg tool_result' },
         h('summary', {}, h('span', { class: 'name' }, 'result')),
         h('pre', { class: 'body' }, m.output),
       );
