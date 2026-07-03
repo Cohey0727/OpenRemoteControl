@@ -385,7 +385,14 @@ fallback) closes it with a `done` frame.
   port. Do not bake a bridge or claude into the image.
 - PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
   and the icon PNGs are checked in as static files and served
-  straight off disk. `scripts/build-icons.ts` is a maintainer-only
+  straight off disk. PWA updates are AGGRESSIVE by design (requested
+  2026-07-03): the server appends a `shell-rev` fingerprint of `ui/`
+  to `/sw.js` (`src/serve/shell-rev.ts`) so any UI change registers
+  as an SW update without a `CACHE_VERSION` bump; the SPA checks
+  every 5 min + on foreground-resume/online, the SW `skipWaiting()`s
+  after precache, and the page self-reloads on `controllerchange`
+  (composer draft parked in `sessionStorage` across the reload). Do
+  not re-introduce a "wait for the user to reload" update path. `scripts/build-icons.ts` is a maintainer-only
   helper (re-rasterises `ui/icon.svg` → icon PNGs); it is never run
   on the server boot path. `scripts/build.ts` (distribution cross-
   compile) does not touch UI assets — the no-UI-build rule survives

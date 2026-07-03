@@ -635,6 +635,15 @@ disabled offline, but the cached history of the last session
 remains visible. Web Push on iOS requires this install step (Safari
 16.4+ delivers push only to home-screen-installed PWAs).
 
+Updates apply themselves in the background: the server stamps
+`/sw.js` with a fingerprint of the `ui/` directory, so any shell
+change (a `git pull` on the host is enough) counts as a new service
+worker; the SPA checks for that every 5 minutes and immediately when
+the app returns to the foreground or the network comes back, the new
+worker activates as soon as it installs (`skipWaiting`), and the page
+reloads itself into the new shell — parking any half-typed composer
+draft in `sessionStorage` and restoring it after the reload.
+
 Design language: the transcript reads like an **instrument log**. Human
 and assistant prose sit in readable surfaces; everything the machine
 does — thinking, tool calls, tool output — is a quiet left-ruled log

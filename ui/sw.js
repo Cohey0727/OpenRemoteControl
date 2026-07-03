@@ -16,9 +16,12 @@
  * bundling.
  */
 
-/* Cache version — bump on shell changes so the activate handler can
- * drop the previous cache cleanly. Anchored to the Git revision of
- * the SPA shell, in plain text so maintenance is human-readable. */
+/* Cache version — bump only on cache-LAYOUT changes (renamed shell
+ * URLs, new precache strategy) so the activate handler drops the
+ * obsolete cache. Update DETECTION does not depend on this: the
+ * server appends a `shell-rev` fingerprint of the ui/ directory to
+ * this file, so any shell change already makes the served bytes
+ * differ and triggers the SW update flow. */
 const CACHE_VERSION = 'v1';
 const APP_SHELL = `${CACHE_VERSION}-app-shell`;
 const APP_SHELL_URLS = [
@@ -34,16 +37,20 @@ const APP_SHELL_URLS = [
 ];
 
 self.addEventListener('install', (event) => {
-  // Precache the shell so the offline fallback has something to
-  // return; we DON'T skipWaiting here — we'd rather the user reload
-  // to pick up the new SW than have a half-installed shell race a
-  // page that thinks it's unSW-controlled.
+  // Precache the shell, then skipWaiting so an updated SW activates
+  // immediately instead of idling in `waiting` until every tab
+  // closes. skipWaiting runs strictly AFTER the precache resolves
+  // (inside waitUntil), so activation never races a partial cache;
+  // the page reloads itself on controllerchange to run the new shell.
   event.waitUntil(
-    caches.open(APP_SHELL).then((cache) => {
-      // Use addAll so a single failure rejects the whole install —
-      // otherwise we'd silently boot with a partial cache.
-      return cache.addAll(APP_SHELL_URLS.map((u) => new Request(u, { cache: 'reload' })));
-    }),
+    caches
+      .open(APP_SHELL)
+      .then((cache) => {
+        // Use addAll so a single failure rejects the whole install —
+        // otherwise we'd silently boot with a partial cache.
+        return cache.addAll(APP_SHELL_URLS.map((u) => new Request(u, { cache: 'reload' })));
+      })
+      .then(() => self.skipWaiting()),
   );
 });
 

@@ -464,6 +464,13 @@ one was.
 - Static-asset serve: `src/serve.ts` accepts `.webmanifest` and sets
   `application/manifest+json` + `cache-control: no-cache` so a manifest
   edit ships without clearing storage.
+- Aggressive background updates (2026-07-03): the server stamps
+  `/sw.js` with a `shell-rev` fingerprint of `ui/` so any shell change
+  is an SW update (no manual `CACHE_VERSION` bump); the SPA runs
+  `registration.update()` every 5 min + on foreground-resume + on
+  `online`; the SW `skipWaiting()`s after precache; the page reloads
+  on `controllerchange`, parking/restoring the composer draft via
+  `sessionStorage`.
 
 **Definition of done — ✓ met.**
 

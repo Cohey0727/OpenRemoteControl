@@ -25,6 +25,7 @@
 import { join, relative, resolve, sep } from 'node:path';
 import type { ServerWebSocket } from 'bun';
 import { writeAudit } from './permission/audit.ts';
+import { computeShellRev } from './serve/shell-rev.ts';
 import { notify } from './push/notifier.ts';
 import { PushStore } from './push/store.ts';
 import { configureWebPush, loadOrCreateVapidKeys } from './push/vapid.ts';
@@ -429,7 +430,13 @@ export async function serve(opts: ServeOptions): Promise<{
         if (!(await file.exists())) {
           return new Response('service worker not built', { status: 404 });
         }
-        return new Response(file, {
+        // Stamp the SW with a fingerprint of the whole UI directory so
+        // ANY shell change makes the served bytes differ — that byte
+        // diff is what the browser's registration.update() treats as
+        // "new version", which drives the install → skipWaiting →
+        // controllerchange → reload update pipeline in the SPA.
+        const sw = `${await file.text()}\n/* shell-rev: ${computeShellRev(uiRoot)} */\n`;
+        return new Response(sw, {
           headers: {
             'content-type': 'application/javascript; charset=utf-8',
             'service-worker-allowed': '/',

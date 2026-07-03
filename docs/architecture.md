@@ -133,9 +133,21 @@ manifest) is precached by the service worker; navigation runs
 NetworkFirst with a precache fallback. When the relay is unreachable
 the shell still loads and the most recently attached client's cached
 transcript remains visible — but the composer is disabled because
-`/ws` is necessarily live-only. Pushing a new shell activates a
-waiting SW and reloads the page on `controllerchange` so updates do
-not strand the user on stale assets.
+`/ws` is necessarily live-only.
+
+**Background updates.** Long-lived installed PWAs never navigate, so
+the browser's own SW update schedule (~24 h) is too lazy. Three
+pieces make updates aggressive instead: (1) the server appends a
+`shell-rev` fingerprint of the `ui/` directory to `/sw.js`
+(`src/serve/shell-rev.ts` — paths + mtime + size, deterministic
+between requests), so ANY shell change makes the served bytes differ
+and registers as an SW update without manual `CACHE_VERSION` bumps;
+(2) the SPA calls `registration.update()` every 5 minutes and
+immediately on `visibilitychange → visible` (phone unlock / app
+switch) and `online`; (3) the SW calls `skipWaiting()` after its
+precache completes, and the page reloads on `controllerchange` —
+parking the composer draft in `sessionStorage` first and restoring it
+after the reload, so an update never eats typed input.
 
 ### 3.3 User-owned `claude` and user-owned bridge
 

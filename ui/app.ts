@@ -388,6 +388,16 @@ const [installPromptEvent, setInstallPromptEvent] = signal<unknown | null>(null)
 const [iosHintVisible, setIosHintVisible] = signal(false);
 const IOS_HINT_LS_KEY = 'open-rc.ios-hint-dismissed';
 
+// PWA update cadence: how often to ask the browser to re-fetch /sw.js
+// while the page stays open. Resume-from-background and coming back
+// online trigger an immediate check on top of this; the interval is
+// the fallback for a tab that just sits there.
+const SW_UPDATE_INTERVAL_MS = 5 * 60_000;
+// Composer draft parked across the self-reload that applies a SW
+// update, so an aggressive background update never eats typed input.
+// sessionStorage: survives the reload, dies with the tab.
+const DRAFT_RESTORE_SS_KEY = 'open-rc.draft-restore';
+
 let ws: WebSocket | undefined;
 
 /* ============================================================
@@ -1287,26 +1297,65 @@ function dismissIosHint(): void {
   }
 }
 
+/** Restore a composer draft parked by the pre-update reload (see the
+ *  controllerchange handler). No-op when there is nothing parked. */
+function restoreParkedDraft(): void {
+  try {
+    const parked = sessionStorage.getItem(DRAFT_RESTORE_SS_KEY);
+    if (parked !== null) {
+      sessionStorage.removeItem(DRAFT_RESTORE_SS_KEY);
+      if (parked !== '') setDraft(parked);
+    }
+  } catch {
+    // sessionStorage blocked (private mode) — the draft was never
+    // parked either, so there is nothing to lose here.
+  }
+}
+
 function initPwa(): void {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  restoreParkedDraft();
   // Register the SW. We do NOT pass a scope: /sw.js is served with
   // `Service-Worker-Allowed: /`, so it can claim the whole origin
   // regardless of where it's listed.
   navigator.serviceWorker
     .register('/sw.js')
     .then((reg) => {
-      // When a new SW takes over (reg.update() finishes, or a new
-      // install completes after a previous activation), reload so
-      // the page is running the new shell. The SW itself does NOT
-      // call skipWaiting on install, so this branch is the main
-      // path for picking up updates.
-      if (reg.waiting) {
-        // A new SW is already installed and waiting. Reload to
-        // activate it (the SW will skip-wait on this signal).
+      // Nudge a worker stuck in `waiting` (installed by an older SW
+      // version that didn't skipWaiting itself). Current SWs skip
+      // waiting on install, so this is a compatibility path.
+      const nudge = (worker: ServiceWorker | null): void => {
         try {
-          reg.waiting.postMessage({ type: 'skipWaiting' });
+          worker?.postMessage({ type: 'skipWaiting' });
         } catch {}
-      }
+      };
+      nudge(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const next = reg.installing;
+        next?.addEventListener('statechange', () => {
+          // `installed` with an existing controller = an UPDATE (not
+          // the first-ever install) finished in the background —
+          // activate it now; controllerchange below applies it.
+          if (next.state === 'installed' && navigator.serviceWorker.controller) nudge(next);
+        });
+      });
+
+      // Aggressive background update checks: the browser only
+      // re-fetches /sw.js on its own schedule (navigations, ~24 h),
+      // which is far too lazy for a long-lived installed PWA. Ask
+      // explicitly on an interval, when the app returns to the
+      // foreground (phone unlock / app switch), and when the network
+      // comes back.
+      const check = (): void => {
+        reg.update().catch(() => {
+          // Offline or the relay is down — the next trigger retries.
+        });
+      };
+      setInterval(check, SW_UPDATE_INTERVAL_MS);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') check();
+      });
+      window.addEventListener('online', check);
     })
     .catch(() => {
       // SW registration failed (e.g. file:// or no HTTPS in some
@@ -1314,11 +1363,20 @@ function initPwa(): void {
       // page; we just lose offline + push.
     });
 
-  // Pick up SW activations triggered while the page is open.
+  // Apply SW activations by reloading into the new shell. The typed
+  // composer draft is parked in sessionStorage first and restored on
+  // boot, so the background update is invisible to the user beyond
+  // the reload itself.
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading) return;
     reloading = true;
+    try {
+      const pending = draft();
+      if (pending !== '') sessionStorage.setItem(DRAFT_RESTORE_SS_KEY, pending);
+    } catch {
+      // Draft parking is best-effort — never block the update.
+    }
     location.reload();
   });
 

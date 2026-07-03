@@ -110,6 +110,26 @@ describe('pwa: service worker', () => {
     expect(res.text).toContain("addEventListener('push'");
     expect(res.text).toContain("addEventListener('notificationclick'");
   });
+
+  test('sw.js is stamped with a stable shell revision so ANY UI change is a SW update', async () => {
+    // The stamp makes the served sw.js bytes change whenever any UI
+    // file changes, so registration.update() detects a new deploy
+    // without a manual CACHE_VERSION bump.
+    const a = await get('/sw.js');
+    const b = await get('/sw.js');
+    const stampOf = (text: string): string | undefined =>
+      /shell-rev: ([0-9a-f]+|unknown)/.exec(text)?.[1];
+    expect(stampOf(a.text)).toBeDefined();
+    expect(stampOf(a.text)).not.toBe('unknown');
+    // Stable while the UI directory is unchanged — otherwise the SW
+    // would reinstall (and the page reload) on every update check.
+    expect(stampOf(b.text)).toBe(stampOf(a.text));
+  });
+
+  test('sw.js activates updates immediately (skipWaiting on install)', async () => {
+    const res = await get('/sw.js');
+    expect(res.text).toContain('skipWaiting');
+  });
 });
 
 describe('pwa: SPA HTML integration', () => {
