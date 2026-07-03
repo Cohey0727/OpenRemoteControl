@@ -64,6 +64,10 @@ const QUIET_TURN_MS = 15_000;
  *  transcript lines (flushed around the same moment) relay first. */
 const DONE_GRACE_MS = 700;
 const MARKER_POLL_MS = 400;
+/** No frame from the server for this long = half-open link (the
+ *  server keepalive-pings every 30 s; this allows several misses). */
+const SERVER_SILENCE_MS = 120_000;
+const WATCHDOG_POLL_MS = 15_000;
 
 /* -------------------------------------------------------------------------- */
 /*  Flags                                                                      */
@@ -230,6 +234,9 @@ export async function runAttachOrc(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let doneTimer: ReturnType<typeof setTimeout> | null = null;
   let lastStopMtime = await stopMarkerMtime(dir);
+  /** Epoch ms of the last frame received from the server (the server
+   *  keepalive-pings every 30 s, so silence means a dead link). */
+  let lastServerActivity = Date.now();
 
   const send = (frame: Record<string, unknown>): void => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -295,6 +302,7 @@ export async function runAttachOrc(
     log(`open-rc attach-orc: shutting down (${reason})`);
     clearInterval(heartbeat);
     clearInterval(markerPoll);
+    clearInterval(watchdog);
     if (reconnectTimer) clearTimeout(reconnectTimer);
     if (doneTimer) clearTimeout(doneTimer);
     tail?.stop();
@@ -344,6 +352,7 @@ export async function runAttachOrc(
   let rejectFirstRegister: ((err: Error) => void) | null = null;
 
   const handleMessage = (raw: unknown): void => {
+    lastServerActivity = Date.now();
     let msg: { type?: string; [k: string]: unknown };
     try {
       msg = JSON.parse(typeof raw === 'string' ? raw : String(raw)) as typeof msg;
@@ -351,6 +360,8 @@ export async function runAttachOrc(
       return;
     }
     switch (msg.type) {
+      case 'ping':
+        return; // keepalive; receiving it is the whole point
       case 'registered': {
         registeredOnce = true;
         resolveFirstRegister?.();
@@ -402,16 +413,45 @@ export async function runAttachOrc(
       return;
     }
     ws = socket;
+    lastServerActivity = Date.now();
+    // Every listener checks it still belongs to the CURRENT socket:
+    // the watchdog abandons half-open sockets, and a late event from
+    // an abandoned one must not touch live state.
     socket.addEventListener('open', () => {
+      if (socket !== ws) return;
       send({ type: 'register', clientId, label: flags.label, cwd: flags.cwd });
     });
-    socket.addEventListener('message', (ev) => handleMessage(ev.data));
+    socket.addEventListener('message', (ev) => {
+      if (socket !== ws) return;
+      handleMessage(ev.data);
+    });
     socket.addEventListener('close', () => {
-      if (stopped) return;
+      if (stopped || socket !== ws) return;
       tail?.stop();
       if (registeredOnce) scheduleReconnect();
     });
   };
+
+  /** Half-open link detection: the server keepalive-pings every 30 s,
+   *  so a connection with no inbound frame for SERVER_SILENCE_MS is
+   *  dead even if the socket still claims OPEN (proxies like
+   *  Cloudflare drop idle WebSockets without a clean close). Abandon
+   *  it and reconnect. */
+  const watchdog = setInterval(() => {
+    if (stopped || !registeredOnce || !ws) return;
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (Date.now() - lastServerActivity <= SERVER_SILENCE_MS) return;
+    log('open-rc attach-orc: server silent — link presumed dead, reconnecting');
+    const dead = ws;
+    ws = null;
+    try {
+      dead.close();
+    } catch {
+      // already gone
+    }
+    tail?.stop();
+    scheduleReconnect();
+  }, WATCHDOG_POLL_MS);
 
   const firstRegistration = new Promise<void>((resolvePromise, rejectPromise) => {
     resolveFirstRegister = resolvePromise;

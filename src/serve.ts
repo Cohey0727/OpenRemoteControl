@@ -34,6 +34,15 @@ import { type WsData, makeWsHandlers } from './ws.ts';
 /** Max conversation frames buffered per client for replay-on-attach. */
 const MAX_HISTORY = 800;
 
+/**
+ * Keepalive cadence. Idle WebSockets die at intermediary proxies
+ * (Cloudflare: ~100 s), so the server generates traffic on every leg:
+ * a JSON `ping` frame to bridges (they use it to detect half-open
+ * links) and a protocol-level ping to browsers/tui (their WS stacks
+ * auto-pong; no client code involved).
+ */
+const PING_INTERVAL_MS = 30_000;
+
 export interface ServeOptions {
   /** Bind host. Default `127.0.0.1` for local-only safety. */
   readonly host?: string;
@@ -496,7 +505,25 @@ export async function serve(opts: ServeOptions): Promise<{
     },
   });
 
+  const keepalive = setInterval(() => {
+    for (const conn of clients.values()) {
+      try {
+        (conn.ws as ServerWebSocket<WsData>).send('{"type":"ping"}');
+      } catch {
+        // dying socket; the close handler cleans up
+      }
+    }
+    for (const browser of connectedBrowsers) {
+      try {
+        browser.ping();
+      } catch {
+        // ignore
+      }
+    }
+  }, PING_INTERVAL_MS);
+
   const stop = async () => {
+    clearInterval(keepalive);
     if (pushStore) pushStore.close();
     // Force-close remaining connections: a relay's sockets have no
     // shutdown value, and a half-closed WS (e.g. a client that sent

@@ -342,9 +342,21 @@ export const AttachedCount = z.object({
 });
 export type AttachedCount = z.infer<typeof AttachedCount>;
 
+/**
+ * Application-level keepalive. The server sends one to every bridge
+ * every `PING_INTERVAL_MS` so intermediary proxies (Cloudflare drops
+ * idle WebSockets after ~100 s) always see traffic, and so the bridge
+ * can detect a half-open link: no server frame for a couple of
+ * minutes means the connection silently died — reconnect. Bridges
+ * don't reply; TCP acks are enough for the proxy.
+ */
+export const ServerPing = z.object({ type: z.literal('ping') });
+export type ServerPing = z.infer<typeof ServerPing>;
+
 export const ServerToBridge = z.discriminatedUnion('type', [
   PromptMessage,
   AttachedCount,
+  ServerPing,
   z.object({
     type: z.literal('permission_response'),
     requestId: z.string(),

@@ -76,10 +76,12 @@ TLS, two flavors:
   over plain HTTP — so the origin vhost is **port 80 only, no https
   redirect** (a redirect loops: client https → CF → origin http → 301
   → …), and no certificate is needed on the origin. Cloudflare
-  proxies WebSockets; it does drop *idle* WS after ~100 s, which the
-  reconnect logic absorbs. With SSL mode "Full", give the origin a
-  cert (Cloudflare origin certificate is the easy one) and keep the
-  443 block instead.
+  proxies WebSockets and drops *idle* ones after ~100 s — the relay
+  defuses this by keepalive-pinging every connection every 30 s, and
+  the bridge additionally treats 120 s of server silence as a
+  half-open link and reconnects. With SSL mode "Full", give the
+  origin a cert (Cloudflare origin certificate is the easy one) and
+  keep the 443 block instead.
 
 ## AWS ECS (Fargate)
 

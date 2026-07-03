@@ -235,9 +235,13 @@ Two boundaries: browser ↔ `open-rc serve` on `/ws`, and bridge ↔
   itself and must NOT be re-sent by the bridge — attach-orc filters
   them by the `[open-rc]` marker), `status`, and `unregister`.
 - **Server → Bridge (`/agent`).** `prompt` (a browser/tui `send`),
-  `permission_response`, and `attached { count }` — how many viewers
-  are watching, sent on every attach/detach so the Stop-hook linger
-  runs only while someone is attached.
+  `permission_response`, `attached { count }` — how many viewers are
+  watching, sent on every attach/detach so the Stop-hook linger runs
+  only while someone is attached — and `ping` every 30 s (keepalive:
+  proxies like Cloudflare drop idle WebSockets at ~100 s, and the
+  bridge treats 120 s of server silence as a half-open link and
+  reconnects; browsers get protocol-level pings instead, which their
+  WS stacks auto-pong).
 
 The server does not define a client-side protocol. A client WS that
 speaks any framed WebSocket messages at all will work, because the
