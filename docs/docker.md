@@ -24,8 +24,8 @@ flowchart LR
 ## Quick start (docker compose — recommended)
 
 ```bash
-git clone https://github.com/kohei/open-rc.git
-cd open-rc
+git clone https://github.com/Cohey0727/OpenRemoteControl.git
+cd OpenRemoteControl
 docker compose up -d
 ```
 

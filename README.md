@@ -41,8 +41,8 @@ sends prompts back.
 
 ```bash
 # 1. Clone & install
-git clone https://github.com/kohei/open-rc.git
-cd open-rc
+git clone https://github.com/Cohey0727/OpenRemoteControl.git
+cd OpenRemoteControl
 bun install
 
 # 2. Start the relay
@@ -723,7 +723,7 @@ direction. Especially welcome: provider-compat testing (Deepseek / GLM
 
 - Anthropic, for Claude Code and the public `--print --output-format
   stream-json` mode that makes this project possible
-- [pocket-claude](https://github.com/nicholasgasior/pocket-claude) —
+- [pocket-claude](https://github.com/zhdzh12138/pocket-claude) —
   the proof that Claude Code's WS bridge is replicable, even if
   open-rc ultimately chose to ship only the relay half
 - The Claude Code community for the wire-format reverse-engineering

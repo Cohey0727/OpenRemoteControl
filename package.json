@@ -4,6 +4,14 @@
   "description": "Open Remote Control — pure WebSocket relay for Claude Code RemoteControl. Open, self-hostable, provider-agnostic.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cohey0727/OpenRemoteControl.git"
+  },
+  "homepage": "https://github.com/Cohey0727/OpenRemoteControl#readme",
+  "bugs": {
+    "url": "https://github.com/Cohey0727/OpenRemoteControl/issues"
+  },
   "bin": {
     "open-rc": "./src/cli.ts"
   },
