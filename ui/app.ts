@@ -1040,8 +1040,8 @@ function buildApp(): HTMLElement {
         'button',
         {
           class: 'install-btn',
-          title: 'Install open-rc',
-          'aria-label': 'Install open-rc',
+          title: 'Install ORC',
+          'aria-label': 'Install ORC',
           onClick: triggerInstallPrompt,
         },
         'Install',

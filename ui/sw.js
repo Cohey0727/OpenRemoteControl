@@ -71,7 +71,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  const data = { title: 'open-rc', body: 'New notification', url: '/' };
+  const data = { title: 'ORC', body: 'New notification', url: '/' };
   if (event.data) {
     try {
       const parsed = event.data.json();

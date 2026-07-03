@@ -35,3 +35,9 @@ captures/
 # and is never committed. The repo documents deployment patterns in
 # docs/ only (see docs/docker.md); the code depends on no environment.
 vps/
+
+# Per-test scratch directories created by attach-state and attach-hooks
+# tests (see tests/attach-state.test.ts, tests/attach-hooks.test.ts).
+# They hold per-run fixture UUIDs and are recreated on every test run;
+# they must never be tracked.
+tests/.tmp-*/
