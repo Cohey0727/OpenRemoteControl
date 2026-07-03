@@ -3,14 +3,15 @@
 ## Threat model
 
 `open-rc` is a self-hosted control plane that brokers WebSocket traffic
-between a Claude Code subprocess (running locally on a device) and a
-remote UI (browser or mobile). The threat model assumes:
+between the user's own `claude` session (fed to the relay by a bridge —
+open-rc never runs `claude` as a subprocess) and a remote UI (browser
+or mobile). The threat model assumes:
 
 - The device running `open-rc serve` is fully under the operator's
   control (laptop, server).
 - The UI is reached over a network the operator controls OR via the
   optional `open-rc hub` relay.
-- The Claude Code subprocess itself is trusted — its tool calls are
+- The user's `claude` session itself is trusted — its tool calls are
   what the operator wants to mediate, not block.
 
 `open-rc` is **not** a sandbox. It does not run untrusted code; it
@@ -27,8 +28,8 @@ forwards user prompts and tool-call requests to Claude Code.
   it only forwards the frames. There is no server-side PreToolUse
   hook and no `bypassPermissions` default (that subsystem was
   removed when the server became a pure relay).
-- **Audit log**: every permission decision and a session lifecycle
-  events are appended to `~/.local/share/open-rc/audit.jsonl`.
+- **Audit log**: every permission decision and session lifecycle
+  event is appended to `~/.local/share/open-rc/audit.jsonl`.
   No rotation is performed automatically; check the file periodically
   if you care about disk usage.
 - **VAPID keys**: persisted once per serve instance at

@@ -5,7 +5,8 @@
 > processes and manages no `claude`; it does not even know `claude` is
 > a process. The user runs `claude` themselves and brings their own
 > bridge to a WebSocket.
-> **Last revised:** 2026-07-01 — pivot to a pure relay.
+> **Last revised:** 2026-07-03 — pure relay + the spawn-free
+> `attach-orc` shared-session bridge (§3.5).
 
 ---
 
@@ -81,7 +82,7 @@ The control plane has three roles. Only one of them is open-rc.
         └── mobile, LAN, Tailscale, SSH tunnel, or VPS — your call
 ```
 
-### 3.1 `open-rc serve` — the only thing open-rc ships
+### 3.1 `open-rc serve` — the relay
 
 `open-rc serve` is a single Bun.serve process. It exposes:
 
@@ -192,14 +193,14 @@ Keeping process startup outside open-rc is deliberate:
   feeds it. Client-side, two helpers ship: `tui` (a `/ws` client that
   starts nothing) and `attach-orc` (a transcript bridge that starts
   nothing — it reads the JSONL the user's own session writes and
-  exchanges files with the `open-rc hook` handlers; see §3.1). Two
+  exchanges files with the `open-rc hook` handlers; see §3.5). Two
   earlier helpers that launched subprocesses — the spawning
   `attach-orc` and `attach-tmux` — were built and removed on
   2026-07-02; the same day's `/attach-orc` goal was then implemented
   spawn-free. Users can still bring any bridge of their own to
   `/agent`.
 
-### 3.1 The `attach-orc` shared-session bridge
+### 3.5 The `attach-orc` shared-session bridge
 
 `/attach-orc`, typed inside a running interactive Claude Code session,
 shares THAT session:
@@ -427,9 +428,12 @@ On client WS close:
   can't make clients. Only the user can (by running their own bridge).
 - No "kill session" from the browser — Ctrl-C on the user's bridge
   is the only way to stop a client.
-- No JSONL replay and no history of *disconnected* clients — the only
-  history is the in-memory buffer of a *currently-connected* client's
-  live stream (dropped on disconnect; never read from `claude`'s files).
+- No SERVER-side reading of `claude`'s files and no history of
+  *disconnected* clients — the server's only history is the in-memory
+  buffer of a *currently-connected* client's stream (dropped on
+  disconnect). Deep history exists because the `attach-orc` BRIDGE
+  replays the session transcript into `/agent` on registration (§3.5);
+  to the server those are ordinary frames.
 - No `/api/external-sessions`, no `claim_external_session`, no
   process discovery.
 
@@ -605,7 +609,7 @@ trusts their own bridge the same way they trust their own
 If a future phase wants to add validation (e.g., zod schemas on
 the client side too), it's a non-breaking addition. Not in v0.x.
 
-### 9.3 Server-side reconnect grace period (BLOCKING for Phase 7)
+### 9.3 Server-side reconnect grace period — RESOLVED (Phase 7: 5 s grace shipped, see §4.4)
 
 When a client WS closes, do we mark the client `exited`
 immediately, or wait N seconds to allow reconnect? Currently leaning
@@ -640,9 +644,9 @@ wait for them to re-register.
 | Term                 | Meaning                                                            |
 | -------------------- | ------------------------------------------------------------------ |
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
-| **`open-rc serve`**  | The pure WS relay. The only thing open-rc ships (besides `hub`).   |
+| **`open-rc serve`**  | The pure WS relay — the server half of open-rc (the CLI also ships `hub`, `tui`, `attach-orc`, `hook`). |
 | **Hub**              | `open-rc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | Whatever feeds `/agent`. First-party: `open-rc attach-orc`, a spawn-free transcript bridge for the session it is invoked from (§3.1). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
+| **Bridge**           | Whatever feeds `/agent`. First-party: `open-rc attach-orc`, a spawn-free transcript bridge for the session it is invoked from (§3.5). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |

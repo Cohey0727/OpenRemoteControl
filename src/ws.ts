@@ -19,8 +19,8 @@
  *     assign `clientId`, broadcast `client_registered`.
  *   - Browser WS opens → state in `WsData` only.
  *   - Browser sends `attach { clientId }` → track in `attachedBrowsers`.
- *   - Bridge WS closes → mark client `exited`, broadcast `client_removed`,
- *     detach browsers (their `activeId` is invalidated).
+ *   - Bridge WS closes → broadcast `client_removed`, drop the client
+ *     from the map, detach its browsers (their `clientId` is cleared).
  */
 
 import type { ServerWebSocket } from 'bun';

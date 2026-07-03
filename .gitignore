@@ -7,7 +7,7 @@ dist/
 *.tsbuildinfo
 .open-rc/
 
-# captures (regenerate via `bun run capture`)
+# local stream-json capture samples (debugging artifacts, never tracked)
 captures/
 *.jsonl
 

@@ -100,6 +100,19 @@ make setup          # launcher + hooks + /attach-orc (override BIN_DIR)
 open-rc serve       # → http://127.0.0.1:7322
 ```
 
+Driving a REMOTE relay by default (a VPS, a Docker host)? Bake its URL
+into the launcher at setup time:
+
+```bash
+make setup ORC_BASE_URL=https://orc.example.com
+```
+
+The launcher then exports that as the default `ORC_BASE_URL` for every
+`open-rc` run — `/attach-orc`, `tui`, and the hooks all target the
+remote relay with zero shell configuration. A value already exported
+in your environment still wins, and re-running `make setup` without
+the variable clears the default.
+
 If `~/.local/bin` isn't on your PATH, `make setup` prints the one-line
 fix. `make teardown` removes everything again.
 
@@ -404,8 +417,7 @@ src/
 └── hub/                         # optional relay (unchanged from prior phases)
     ├── crypto.ts                # Ed25519 keys + sign/verify
     ├── store.ts                 # bun:sqlite (devices, sessions, audit)
-    ├── server.ts                # Bun.serve WS server
-    └── client.ts                # serve-side hub dialer
+    └── server.ts                # Bun.serve WS server
 
 ui/
 ├── index.html                   # SPA shell + importmap for vendored deps

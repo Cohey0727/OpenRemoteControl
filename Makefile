@@ -96,11 +96,22 @@ install: ## Install deps (bun install)
 	@echo "Done. Run \`make serve\` (or \`bun run serve\`) to launch open-rc."
 
 .PHONY: setup
-setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command
+setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command (ORC_BASE_URL=… bakes a default relay URL into the launcher)
 	@# Install the launcher on PATH. It's a thin wrapper around the
 	@# current source, so `git pull` updates behavior with no rebuild.
+	@# With ORC_BASE_URL=… the launcher carries that relay URL as the
+	@# default (`:=` — a value already in the environment still wins),
+	@# so `open-rc tui`, `/attach-orc`, and the hooks all target it
+	@# without any shell-rc editing. Re-run setup to change or clear it.
 	@mkdir -p $(BIN_DIR)
-	@printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc
+	@if [ -n "$(ORC_BASE_URL)" ]; then \
+	  printf '%s\n' '#!/bin/sh' \
+	    ': "$${ORC_BASE_URL:=$(ORC_BASE_URL)}"' \
+	    'export ORC_BASE_URL' \
+	    'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc; \
+	else \
+	  printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc; \
+	fi
 	@chmod +x $(BIN_DIR)/open-rc
 	@# Upgraders: drop the long-gone standalone attach-orc launcher and
 	@# the superseded shell-init file if an older setup left them.
@@ -112,7 +123,11 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	@printf '%s\n' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / SessionEnd)$(OFF)' \
-	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md' \
+	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md'
+	@if [ -n "$(ORC_BASE_URL)" ]; then \
+	  printf '%s\n' ' $(AMBER)◉$(OFF) $(DIM)relay$(OFF)     $(CYAN)$(ORC_BASE_URL)$(OFF) $(DIM)(launcher default — env still wins)$(OFF)'; \
+	fi
+	@printf '%s\n' \
 	  '' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
 	  '   $(CYAN)open-rc serve$(OFF)      $(DIM)the relay + SPA$(OFF)' \

@@ -236,42 +236,39 @@ The private key is stored under `~/.config/open-rc/device.key` with mode
 
 ---
 
-## Auth (hub mode): email magic link
+## Auth (hub mode): Ed25519 device pairing
 
-**Pick:** email magic link, no password storage. Pluggable.
+**Pick (shipped):** Ed25519 device enrollment — each `serve` instance
+generates a keypair, the hub records the public key after the user
+approves the printed fingerprint at `/api/pair`. Browsers are NOT
+authenticated by the hub itself; production deployments front it with
+an authenticated TLS proxy (see `SECURITY.md`).
 
 **Why:**
-- No password database to compromise.
-- Familiar UX.
-- SMTP is universally available; no extra SaaS dependency.
+- No password or email infrastructure at all; nothing to store or leak.
+- Proof-of-possession on every device connection.
+- Matches the "self-hosted, bring your own perimeter" posture.
 
-**Implementation:** store a one-time token (32 bytes random, base64url) in
-the `sessions` table with a 15-minute TTL, send a link with the token to
-the user's email, the link goes to `/auth/verify?token=…`, the server
-marks the email as logged in and sets an HttpOnly cookie.
-
-**Email transport:** pluggable. Default: SMTP via `nodemailer`. For
-self-hosters, set `OPENRC_SMTP_URL=smtps://user:pass@host:465`.
-
-**Alternatives considered:** OAuth (would require us to register as an
-OAuth client somewhere — adds friction for self-hosters), WebAuthn
+**Alternatives considered:** email magic link (an earlier draft pick —
+needs SMTP plus token storage, never implemented; browsers still ended
+up needing a fronting proxy anyway), OAuth (requires registering a
+client somewhere — friction for self-hosters), WebAuthn
 (over-engineered for v1), password + bcrypt (we'd rather not store
 passwords at all).
 
 ---
 
-## Logging: console + pino
+## Logging: console
 
-**Pick:** `pino` in production, plain `console` in dev. Both go through a
-small wrapper so we can swap later.
+**Pick (shipped):** plain `console`. The relay's log volume is a
+handful of lifecycle lines; structured logging would be ceremony
+without a consumer. In Docker, `docker logs` / dozzle-style viewers
+see the same stream.
 
-**Why pino:**
-- Fast, structured JSON output.
-- Pretty-printing via `pino-pretty` for local dev.
-- Standard for Node/Bun services.
-
-**Alternatives considered:** `winston` (slower, more features we don't
-need), `bunyan` (similar but less actively maintained).
+**Alternatives considered:** `pino` (fast structured JSON — worth
+revisiting only if the relay ever emits enough volume to need
+filtering; not a dependency today), `winston` (slower, features we
+don't need), `bunyan` (less actively maintained).
 
 ---
 
@@ -326,7 +323,7 @@ If the user wants a `claude` running, they run it themselves. To share
 that session with the browser they either type `/attach-orc` inside it
 (first-party: the bridge tails the session's own transcript JSONL and
 the Claude Code hooks deliver browser prompts back — file I/O and
-WebSockets only, see `docs/architecture.md` §3.1) or write their own
+WebSockets only, see `docs/architecture.md` §3.5) or write their own
 bridge that pipes `claude`'s stream-json to `/agent`.
 
 > **Spawning remains out of scope.** The original `attach-orc`

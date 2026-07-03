@@ -544,11 +544,12 @@ Candidate items (prioritized at the start of the phase):
 
 ### Phase 8.4 — Shared session: `/attach-orc` transcript bridge + hook delivery — ✓ DONE (2026-07-02)
 
-**Goal (verbatim user requirement).** ブラウザとCLIのセッションを完全に
-共有しろ: `/attach-orc` したセッションがサイドバーに表示され、クリックで
-履歴が見えてメッセージを送信でき、CLIからもブラウザからも閲覧・送信できる。
-**spawnではない** — the session being shared is the one the user is
-already sitting in.
+**Goal (user requirement, translated from the Japanese original).**
+Fully share the session between the browser and the CLI: a session
+that ran `/attach-orc` appears in the sidebar; clicking it shows the
+history and lets you send messages; both the CLI and the browser can
+read and send. **Not by spawning** — the session being shared is the
+one the user is already sitting in.
 
 **Mechanics (zero spawning, kept forever).**
 

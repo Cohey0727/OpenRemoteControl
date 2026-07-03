@@ -23,8 +23,8 @@ start `claude`, does not own it, does not manage its lifecycle.
 > share the session from the outside instead (transcript + hooks,
 > like `attach-orc` does).
 
-Two halves ship today (requested 2026-07-02: "ブラウザとCLIのセッション
-を完全に共有しろ … spawnではない"):
+Two halves ship today (requested 2026-07-02: "fully share the session
+between the browser and the CLI … not by spawning"):
 
 - **`open-rc serve`** — a pure WebSocket relay. It does not start
   `claude`, does not manage it, does not know `claude` is a process.
@@ -134,14 +134,17 @@ rebuilds the same UX against any provider by relaying the public
   History note: an earlier `attach-orc` that SPAWNED `claude --print`,
   and `attach-tmux` (tmux mirror), were removed on 2026-07-02 as a
   deliberate, requested decision; later the same day the user
-  explicitly requested full browser/CLI session sharing "spawnではない",
-  which is why today's `attach-orc` exists as a transcript+hooks
-  bridge. Do not reintroduce spawning under any name.
+  explicitly requested full browser/CLI session sharing "not by
+  spawning", which is why today's `attach-orc` exists as a
+  transcript+hooks bridge. Do not reintroduce spawning under any name.
 - **`make setup` registers the launcher, the hooks, and the command.**
   It writes one launcher script to `~/.local/bin` (override `BIN_DIR`):
   `#!/bin/sh; exec bun run <checkout>/src/cli.ts … "$@"`, so the
   abs-path anchor lives in the launcher and a `git pull` updates
-  behavior with no reinstall. It then runs `scripts/install-hooks.ts`,
+  behavior with no reinstall. `make setup ORC_BASE_URL=<url>` bakes a
+  default relay URL into the launcher (`:=` — an env value still
+  wins; re-run setup without it to clear). It then runs
+  `scripts/install-hooks.ts`,
   which idempotently merges the Stop/UserPromptSubmit/SessionEnd hook
   entries (`<BIN_DIR>/open-rc hook <event>`) into
   `~/.claude/settings.json` — preserving all user hooks, never
@@ -303,7 +306,7 @@ fallback) closes it with a `done` frame.
   user-owned; the server doesn't create them. The sidebar is
   *passive* — it shows what bridges are currently connected.
 - **Don't ask the user what they mean by obvious things.** If the
-  user says "ローカルでclaude起動", they mean "I run claude on my
+  user says "run claude locally", they mean "I run claude on my
   host machine", not "open-rc starts claude".
 - **Don't write code before the docs agree.** When the model isn't
   settled, write the design doc first. Code is downstream of docs.

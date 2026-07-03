@@ -160,25 +160,34 @@ To know the exact JSON fields, frame ordering, reconnection behavior, and
 edge cases, we need to run `claude --remote-control` against a stub and
 record what comes over the wire.
 
-This is the first thing `open-rc` will do. See
-[`docs/roadmap.md`](./roadmap.md) Phase 0.
+(Historical: this capture-first step predates the pure-relay pivot —
+see [`docs/roadmap.md`](./roadmap.md), "0. Phasing principle" and the
+Phase 7 pivot.)
 
 ---
 
-## What this means for `open-rc`
+## What this meant for `open-rc` (historical — superseded by the pivot)
 
-The investigation narrows `open-rc`'s scope to four things:
+> **Note (2026-07-02).** This section records the investigation's
+> ORIGINAL conclusion. Item 1 — speaking `claude --remote-control`'s
+> private dialect — was subsequently REJECTED: open-rc relays the
+> public stream-json format only and never touches the private bridge
+> protocol (see `CLAUDE.md` and roadmap Phase 7). Items 2–3 shipped;
+> item 4 shipped as plain frame relaying in hub mode, not
+> `control_request` routing.
 
-1. **Implement the bridge side of the WS protocol** — speak whatever dialect
-   `claude --remote-control` expects. Most of the actual lifting (running
-   the agent, executing tools) stays inside the CLI; we only handle the
-   small control messages.
+The investigation originally narrowed `open-rc`'s scope to four things:
+
+1. **(Rejected.) Implement the bridge side of the WS protocol** — speak
+   whatever dialect `claude --remote-control` expects. Most of the
+   actual lifting (running the agent, executing tools) stays inside
+   the CLI; we only handle the small control messages.
 2. **Serve a web UI** — a SPA that renders session events and lets the user
    send prompts. Same UI works for local access (loopback) and remote
    access (hub).
 3. **Identity** — Trusted Device enrollment for the hub, using our own
    keypair scheme (Ed25519 + browser confirmation), not Anthropic OAuth.
-4. **Optional: route control traffic across machines** — when a hub
+4. **(Superseded.) Route control traffic across machines** — when a hub
    connects to many machines, route `control_request` envelopes to the
    right one based on session ID.
 

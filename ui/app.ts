@@ -323,6 +323,7 @@ type ServerBrowserMessage =
   | { type: 'clients_changed'; clients: ClientInfo[] }
   | { type: 'user'; clientId: string; text: string }
   | { type: 'text'; clientId: string; text: string }
+  | { type: 'text_delta'; clientId: string; text: string }
   | { type: 'thinking'; clientId: string; text: string }
   | { type: 'tool_use'; clientId: string; tool: string; input: string }
   | { type: 'tool_result'; clientId: string; output: string }
@@ -333,7 +334,7 @@ type ServerBrowserMessage =
       tool: string;
       input: Record<string, unknown>;
     }
-  | { type: 'done'; clientId: string; cost?: number; duration_ms?: number }
+  | { type: 'done'; clientId: string; cost?: number; duration_ms?: number; ts?: number }
   | { type: 'error'; clientId: string; message: string };
 
 interface PermissionPrompt {
