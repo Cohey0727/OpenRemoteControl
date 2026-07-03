@@ -505,6 +505,10 @@ bring your own stdio bridge; the relay treats both identically.
 - [`docs/docker.md`](./docs/docker.md) — running the relay with
   Docker: compose quick start, port/exposure model, the `/data`
   volume, VPS layout, upgrades, troubleshooting.
+- [`docs/deploy.md`](./docs/deploy.md) — deploying the relay to a
+  generic VPS, AWS ECS (Fargate), Google Cloud Run, or Fly.io: what
+  the relay demands from a platform, per-platform recipes, and a
+  comparison table.
 
 ---
 
