@@ -1,14 +1,27 @@
 {
   "name": "open-rc",
   "version": "0.1.0",
-  "description": "Pure WebSocket relay for Claude Code RemoteControl — open, self-hostable, provider-agnostic.",
+  "description": "Open Remote Control — pure WebSocket relay for Claude Code RemoteControl. Open, self-hostable, provider-agnostic.",
   "type": "module",
   "license": "MIT",
   "bin": {
     "open-rc": "./src/cli.ts"
   },
-  "files": ["src", "ui", "README.md", "SECURITY.md", "LICENSE"],
-  "keywords": ["claude", "claude-code", "remote", "control-plane", "agent", "relay"],
+  "files": [
+    "src",
+    "ui",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "remote",
+    "control-plane",
+    "agent",
+    "relay"
+  ],
   "publishConfig": {
     "access": "public"
   },
