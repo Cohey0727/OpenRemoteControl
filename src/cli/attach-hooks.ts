@@ -39,12 +39,10 @@ import {
   bridgeAlive,
   browserTurnMarkerExists,
   clearBrowserTurnMarker,
-  clearReleaseMarker,
   drainQueue,
   endMarkerExists,
   queueNonEmpty,
   readAttachedCount,
-  releaseMarkerMtime,
   touchBrowserTurnMarker,
   touchEndMarker,
   touchStopMarker,
@@ -61,12 +59,14 @@ const DEFAULT_LINGER_MS = 45_000;
  * eventually fell off. The linger is a sleeping poll loop: no tokens,
  * no context growth, ~zero CPU. It ends when a message is delivered
  * (and a fresh one starts at that turn's end), when the session or
- * bridge ends, or when the terminal user reclaims the prompt with
- * `open-rc release` (or Esc, where Claude Code allows interrupting
- * hooks). A prompt typed in the terminal then clears browser-driven
- * mode, restoring the short window. Set ORC_STOP_LINGER_ACTIVE_MS to
- * a number to cap it anyway; the installed Stop-hook `timeout`
- * (30 days) is the outer bound.
+ * bridge ends, or when the terminal user presses Esc — verified to
+ * cancel a running Stop hook instantly, returning the prompt. (Also
+ * verified: a prompt TYPED during a running hook queues until the
+ * hook exits — it does not cancel it — which is why the CLI-driven
+ * window stays short.) A prompt typed after Esc clears browser-driven
+ * mode, restoring the short window. Deliberately no env cap — always
+ * unlimited; the installed Stop-hook `timeout` (30 days) is the
+ * mechanical outer bound.
  */
 const DEFAULT_ACTIVE_LINGER_MS = Number.POSITIVE_INFINITY;
 /** Queue poll cadence during the linger window. */
@@ -102,7 +102,9 @@ function envMs(name: string, fallback: number): number {
 }
 
 export const lingerMs = () => envMs('ORC_STOP_LINGER_MS', DEFAULT_LINGER_MS);
-export const activeLingerMs = () => envMs('ORC_STOP_LINGER_ACTIVE_MS', DEFAULT_ACTIVE_LINGER_MS);
+/** Browser-driven mode is ALWAYS unlimited (owner's call, 2026-07-03) —
+ *  no env cap. Tests override via runStopHook opts. */
+export const activeLingerMs = () => DEFAULT_ACTIVE_LINGER_MS;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -145,7 +147,6 @@ export async function runStopHook(
     ? (opts?.activeLingerMs ?? activeLingerMs())
     : (opts?.lingerMs ?? lingerMs());
   const deadline = Date.now() + window;
-  const lingerStartedAt = Date.now();
 
   for (;;) {
     const texts = await drainQueue(dir);
@@ -156,15 +157,6 @@ export async function runStopHook(
     }
     if (await endMarkerExists(dir)) return {};
     if (!(await bridgeAlive(dir))) return {};
-    // `open-rc release` hands the prompt back to the terminal. Only a
-    // marker fresher than THIS linger counts — a stale one must not
-    // kill future windows.
-    const released = await releaseMarkerMtime(dir);
-    if (released !== null && released >= lingerStartedAt) {
-      await clearReleaseMarker(dir);
-      await clearBrowserTurnMarker(dir);
-      return {};
-    }
     // In normal (CLI-driven) mode, linger only while someone is
     // actually watching. In browser-driven mode, keep listening even
     // at zero viewers: a phone locking its screen drops the WebSocket

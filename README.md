@@ -149,10 +149,9 @@ terminal never wait long, but once a turn was DRIVEN from the browser
 the terminal is presumed unattended and the session listens
 **indefinitely** — a remote conversation never falls off a window
 cliff, no matter how long you take to reply. Reclaim the terminal any
-time with `open-rc release` (run in the project directory; or Esc,
-where Claude Code allows interrupting hooks) — typing a prompt then
-returns everything to the short window. Cap the unlimited mode with
-`ORC_STOP_LINGER_ACTIVE_MS` if you prefer a deadline. Messages that
+time by pressing **Esc** — it cancels the listening hook instantly
+(verified against a live session) and typing a prompt then returns
+everything to the short window. Messages that
 do arrive with no window open (e.g. before the first browser turn)
 get an immediate "message queued — session is idle" note in the
 browser and a waiting-message hint in the idle terminal, and are

@@ -15,7 +15,7 @@ The bridge does not spawn or control any process. It finds this session's own tr
 After launching, wait ~2 seconds, check the background task's output, and tell the user, in a few short lines:
 
 - the session URL the bridge printed (`open http://…/sessions/<id>`) — that link opens THIS conversation in the browser,
-- messages from the browser arrive at turn ends: while someone is attached, a listening window keeps the session responsive after each turn — 45 s normally (`ORC_STOP_LINGER_MS`), and UNLIMITED once the conversation is driven from the browser, so the remote user is never cut off; reclaim this terminal any time with `open-rc release` (from this project directory) and a browser message that arrives with no window open gets an immediate "queued — session is idle" note and is delivered the next time you prompt here,
+- messages from the browser arrive at turn ends: while someone is attached, a listening window keeps the session responsive after each turn — 45 s normally (`ORC_STOP_LINGER_MS`), and UNLIMITED once the conversation is driven from the browser, so the remote user is never cut off; reclaim this terminal any time by pressing Esc (it cancels the listening hook instantly — verified) and a browser message that arrives with no window open gets an immediate "queued — session is idle" note and is delivered the next time you prompt here,
 - stop sharing by ending the background task; the session itself is never touched.
 
 If the bridge exits within ~10 seconds, it could not register with `open-rc serve` (it fails fast when the first registration times out) — surface its output so the user sees why (commonly: `serve` isn't running, `ORC_BASE_URL` points nowhere, or another bridge already shares this session).
