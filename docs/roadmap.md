@@ -7,7 +7,7 @@
 
 > **⚠ 2026-07-02 — process-launching helpers removed.** The phases
 > below that shipped CLI commands which started processes — **Phase
-> 7.5 `attach-orc`** (launched `claude`), **Phase 7.6 `/attach-orc`**
+> 7.5 `attach-orc`** (launched `claude`), **Phase 7.6 `/orc`**
 > (its slash command), and **Phase 8.3 `attach-tmux`** (drove `tmux`
 > to mirror a pane) — were **removed** at the user's direction:
 > starting processes is out of scope. The entries are kept below as a
@@ -317,7 +317,7 @@ nothing while the user gets an obvious attach path.
   `ANTHROPIC_API_KEY`, which broke OAuth-login machines.)
 - Fail-fast: if the FIRST registration doesn't complete within 10 s
   (serve down, bad URL, clientId collision), exit(1) with the reason —
-  the `/attach-orc` slash command reads an early exit as "serve isn't
+  the `/orc` slash command reads an early exit as "serve isn't
   running". After a successful registration, reconnects retry forever.
   `ORC_REGISTER_TIMEOUT_MS` overrides the deadline (tests only).
 - Streaming: `--include-partial-messages` is part of the launch args;
@@ -345,21 +345,21 @@ nothing while the user gets an obvious attach path.
 - `tests/attach-orc-cli.test.ts` — full round-trip test through a
   mock `claude` binary.
 
-### Phase 7.6 — `/attach-orc` slash command — ✓ DONE, ✗ REMOVED 2026-07-02
+### Phase 7.6 — `/orc` slash command — ✓ DONE, ✗ REMOVED 2026-07-02
 
 **Goal.** Let the user launch the bridge from inside Claude Code
 itself, instead of opening a separate terminal to run the CLI.
 
-- `commands/attach-orc.md` — repo-tracked slash command definition.
+- `commands/orc.md` — repo-tracked slash command definition.
   Body tells Claude to run `bun run src/cli.ts attach-orc $ARGUMENTS`
   via the Bash tool. The slash command launches **nothing new** — it
   delegates verbatim to the existing Phase 7.5 CLI, so the server's
   pure-relay property is unaffected.
-- `make setup` — symlinks `commands/attach-orc.md` →
-  `~/.claude/commands/attach-orc.md` so `/attach-orc` is available
+- `make setup` — symlinks `commands/orc.md` →
+  `~/.claude/commands/orc.md` so `/orc` is available
   in Claude Code globally. `make teardown` removes the symlink.
 - README Quick Start updated to document `make setup` first, then
-  `/attach-orc` from inside Claude Code (recommended) or
+  `/orc` from inside Claude Code (recommended) or
   `bun run src/cli.ts attach-orc` directly (headless fallback).
 - `CLAUDE.md` got a new "slash command is a thin front-end" rule.
 
@@ -370,7 +370,7 @@ Reaffirmed constraints:
 - The slash command's body forwards `$ARGUMENTS` to the CLI; no
   pre-processing, no side effects beyond what the CLI already does.
 - Removing the slash command (via `make teardown` or by deleting
-  `commands/attach-orc.md`) does not affect the CLI or the server.
+  `commands/orc.md`) does not affect the CLI or the server.
 
 ### Phase 7.7 — Shared session (`open-rc tui`) — ✓ DONE
 
@@ -542,11 +542,11 @@ Candidate items (prioritized at the start of the phase):
   `websocat` wrapper, tmux capture-pane). Not part of the CLI;
   documented but optional.
 
-### Phase 8.4 — Shared session: `/attach-orc` transcript bridge + hook delivery — ✓ DONE (2026-07-02)
+### Phase 8.4 — Shared session: `/orc` transcript bridge + hook delivery — ✓ DONE (2026-07-02)
 
 **Goal (user requirement, translated from the Japanese original).**
 Fully share the session between the browser and the CLI: a session
-that ran `/attach-orc` appears in the sidebar; clicking it shows the
+that ran `/orc` appears in the sidebar; clicking it shows the
 history and lets you send messages; both the CLI and the browser can
 read and send. **Not by spawning** — the session being shared is the
 one the user is already sitting in.
@@ -555,7 +555,7 @@ one the user is already sitting in.
 
 - `open-rc attach-orc` (`src/cli/attach-orc.ts`) resolves the newest
   transcript JSONL for its cwd (`src/transcript/locate.ts` — the
-  session that just ran `/attach-orc` modified its transcript last),
+  session that just ran `/orc` modified its transcript last),
   registers on `/agent` with **clientId = session id** (stable deep
   links), replays the transcript as history (translate:
   `src/transcript/translate.ts`; capped at `MAX_REPLAY_FRAMES`), then
@@ -579,7 +579,7 @@ one the user is already sitting in.
   pay nothing.
 
 **Definition of done.** ✓ `make setup` installs launcher + hooks +
-command; `/attach-orc` in a running session → sidebar row (session id)
+command; `/orc` in a running session → sidebar row (session id)
 → click → full history → browser send → session responds at the next
 hook moment → response visible in browser, terminal, and `tui`.
 Integration-tested in `tests/attach-orc-bridge.test.ts` (in-process

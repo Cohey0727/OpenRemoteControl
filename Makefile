@@ -87,7 +87,7 @@ relay-diagram:
 serve-hints:
 	@printf '%s\n' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
-	  '   $(CYAN)/attach-orc$(OFF)     $(DIM)inside claude — THIS session appears in the sidebar$(OFF)' \
+	  '   $(CYAN)/orc$(OFF)     $(DIM)inside claude — THIS session appears in the sidebar$(OFF)' \
 	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto the same session$(OFF)' \
 	  '' \
 	  ' $(DIM)ctrl-c stops the relay$(OFF)' \
@@ -103,14 +103,14 @@ install: ## Install deps (bun install)
 	@echo "Done. Run \`make serve\` (or \`bun run serve\`) to launch open-rc."
 
 .PHONY: setup
-setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command (asks for your relay URL)
+setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /orc command (asks for your relay URL)
 	@# Install the launcher on PATH. It's a thin wrapper around the
 	@# current source, so `git pull` updates behavior with no rebuild.
 	@#
 	@# The relay URL is ASKED on the CLI (interactive runs): answer with
 	@# your relay (e.g. https://orc.example.com) and the launcher bakes
 	@# it in as the ORC_BASE_URL default (`:=` — a value already in the
-	@# environment still wins), so `open-rc tui`, `/attach-orc`, and the
+	@# environment still wins), so `open-rc tui`, `/orc`, and the
 	@# hooks all target it with zero shell configuration. Empty answer =
 	@# local default (ws://127.0.0.1:7322). Non-interactive runs skip
 	@# the question; `make setup ORC_BASE_URL=…` answers it up front.
@@ -137,18 +137,18 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	@rm -f $(BIN_DIR)/attach-orc
 	@rm -f $(SHELL_INIT_FILE)
 	@# Claude Code integration: Stop/UserPromptSubmit/SessionEnd hooks in
-	@# ~/.claude/settings.json + the /attach-orc slash command symlink.
+	@# ~/.claude/settings.json + the /orc slash command symlink.
 	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/open-rc \
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR)
 	@printf '%s\n' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / Notification / SessionEnd)$(OFF)' \
-	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md'
+	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/orc.md'
 	@printf '%s\n' \
 	  '' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
 	  '   $(CYAN)open-rc serve$(OFF)      $(DIM)the relay + SPA$(OFF)' \
-	  '   $(CYAN)/attach-orc$(OFF)        $(DIM)inside claude — mirror THIS session to the browser$(OFF)' \
+	  '   $(CYAN)/orc$(OFF)        $(DIM)inside claude — mirror THIS session to the browser$(OFF)' \
 	  '   $(CYAN)open-rc tui$(OFF)        $(DIM)a terminal window onto a relayed session$(OFF)' \
 	  ''
 	@case ":$$PATH:" in \
@@ -160,14 +160,15 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	esac
 
 .PHONY: teardown
-teardown: ## Remove the launcher, Claude Code hooks, and /attach-orc command
+teardown: ## Remove the launcher, Claude Code hooks, and /orc command
 	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --remove \
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR) || true
 	@rm -f $(BIN_DIR)/open-rc
 	@rm -f $(BIN_DIR)/attach-orc
+	@rm -f $(HOME)/.claude/commands/orc.md
 	@rm -f $(HOME)/.claude/commands/attach-orc.md
 	@rm -f $(SHELL_INIT_FILE)
-	@echo "Removed: $(BIN_DIR)/open-rc, Claude Code hooks, and /attach-orc command"
+	@echo "Removed: $(BIN_DIR)/open-rc, Claude Code hooks, and /orc command"
 	@echo "Note: any 'export PATH=$(BIN_DIR):...' or 'source $(SHELL_INIT_FILE)' lines"
 	@echo "      you added to ~/.zshrc / ~/.bashrc were NOT removed — clean those up by hand."
 

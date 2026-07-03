@@ -6,10 +6,10 @@
  *      Stop / UserPromptSubmit / Notification / SessionEnd → `open-rc hook <event>`.
  *      These are the browser→session delivery half of `attach-orc`;
  *      they are instant no-ops on sessions that never ran
- *      `/attach-orc` (see src/cli/attach-hooks.ts).
- *   2. The `/attach-orc` slash command — a symlink from
- *      `~/.claude/commands/attach-orc.md` to this repo's
- *      `commands/attach-orc.md`, so `git pull` updates it in place.
+ *      `/orc` (see src/cli/attach-hooks.ts).
+ *   2. The `/orc` slash command — a symlink from
+ *      `~/.claude/commands/orc.md` to this repo's
+ *      `commands/orc.md`, so `git pull` updates it in place.
  *
  * Idempotent: existing open-rc entries (recognized by their command
  * containing "open-rc hook") are replaced, never duplicated, and all
@@ -102,8 +102,11 @@ async function readSettings(path: string): Promise<Settings> {
 
 async function installCommandLink(commandsDir: string, repoCommand: string): Promise<void> {
   await mkdir(commandsDir, { recursive: true });
-  const link = join(commandsDir, 'attach-orc.md');
+  const link = join(commandsDir, 'orc.md');
   await unlink(link).catch(() => {});
+  // Upgraders: drop the pre-rename /attach-orc symlink so the skill
+  // doesn't appear under two names.
+  await unlink(join(commandsDir, 'attach-orc.md')).catch(() => {});
   await symlink(repoCommand, link);
 }
 
@@ -116,7 +119,7 @@ async function main(): Promise<void> {
     typeof flags.settings === 'string' ? flags.settings : join(home, '.claude', 'settings.json');
   const commandsDir =
     typeof flags.commandsDir === 'string' ? flags.commandsDir : join(home, '.claude', 'commands');
-  const repoCommand = new URL('../commands/attach-orc.md', import.meta.url).pathname;
+  const repoCommand = new URL('../commands/orc.md', import.meta.url).pathname;
 
   const settings = await readSettings(settingsPath);
   const merged = mergeSettings(settings, bin, remove);
@@ -124,15 +127,16 @@ async function main(): Promise<void> {
   await writeFile(settingsPath, `${JSON.stringify(merged, null, 2)}\n`);
 
   if (remove) {
+    await unlink(join(commandsDir, 'orc.md')).catch(() => {});
     await unlink(join(commandsDir, 'attach-orc.md')).catch(() => {});
     console.log(`open-rc hooks removed from ${settingsPath}`);
-    console.log(`removed ${join(commandsDir, 'attach-orc.md')}`);
+    console.log(`removed ${join(commandsDir, 'orc.md')}`);
   } else {
     await installCommandLink(commandsDir, repoCommand);
     console.log(
       `open-rc hooks installed in ${settingsPath} (Stop / UserPromptSubmit / Notification / SessionEnd)`,
     );
-    console.log(`/attach-orc command linked at ${join(commandsDir, 'attach-orc.md')}`);
+    console.log(`/orc command linked at ${join(commandsDir, 'orc.md')}`);
     console.log('restart running claude sessions to pick the hooks up');
   }
 }

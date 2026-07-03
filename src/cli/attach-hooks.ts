@@ -26,7 +26,7 @@
  *
  * Every handler is a fast no-op (exit 0, no output) unless a bridge
  * with a fresh heartbeat exists for the session — the hooks are inert
- * on every session that never ran `/attach-orc`.
+ * on every session that never ran `/orc`.
  *
  * No handler spawns anything, reads the process table, or touches
  * `claude` itself: they only read stdin JSON and exchange files with

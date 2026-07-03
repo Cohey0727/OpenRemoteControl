@@ -9,7 +9,7 @@
  *
  * The bridge shares the CURRENT session of a project, which is the
  * most recently modified transcript in that directory — the session
- * that just executed `/attach-orc` has, by definition, written its
+ * that just executed `/orc` has, by definition, written its
  * own invocation to its transcript moments ago.
  *
  * Read-only: this module never writes into `~/.claude`.

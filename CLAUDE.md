@@ -28,7 +28,7 @@ between the browser and the CLI … not by spawning"):
 
 - **`open-rc serve`** — a pure WebSocket relay. It does not start
   `claude`, does not manage it, does not know `claude` is a process.
-- **`open-rc attach-orc` + the `/attach-orc` slash command + the
+- **`open-rc attach-orc` + the `/orc` slash command + the
   `open-rc hook` handlers** — the first-party, spawn-free way to feed
   the relay from an ALREADY-RUNNING interactive Claude Code session.
   The bridge reads the transcript JSONL the session itself writes
@@ -59,12 +59,12 @@ rebuilds the same UX against any provider by relaying the public
 
 ## Required features (must ship)
 
-- **Shared session via `/attach-orc` (2026-07-02, explicit user goal).**
-  Inside a running Claude Code session, `/attach-orc` makes THAT
+- **Shared session via `/orc` (2026-07-02, explicit user goal).**
+  Inside a running Claude Code session, `/orc` makes THAT
   session appear in the browser sidebar; clicking it shows the full
   history and a working composer; messages can be read and sent from
   the CLI and the browser alike; nothing is spawned. Mechanics:
-  `commands/attach-orc.md` runs `open-rc attach-orc` in the background
+  `commands/orc.md` runs `open-rc attach-orc` in the background
   (via the session's own Bash tool — user-initiated, not open-rc);
   the bridge resolves the newest transcript JSONL for the cwd, uses
   the session id as clientId, replays + tails it to `/agent`, and
@@ -159,8 +159,8 @@ rebuilds the same UX against any provider by relaying the public
   entries (`<BIN_DIR>/open-rc hook <event>`) into
   `~/.claude/settings.json` — preserving all user hooks, never
   duplicating its own (recognized by the "open-rc hook" substring) —
-  and symlinks `commands/attach-orc.md` to
-  `~/.claude/commands/attach-orc.md`. `make teardown` reverses all of
+  and symlinks `commands/orc.md` to
+  `~/.claude/commands/orc.md`. `make teardown` reverses all of
   it. The hooks are instant no-ops for any session without a live
   bridge heartbeat under `~/.open-rc/attach/<sessionId>/`.
 - **`open-rc tui` is a terminal front-end, not a bridge.** `tui` is a
@@ -286,7 +286,7 @@ is vendored under `ui/vendor/` and resolved via importmap; assistant
 markdown is sanitized before it touches innerHTML.
 
 The user runs `claude` themselves. To share it, they either type
-`/attach-orc` in the session (first-party, transcript+hooks) or bring
+`/orc` in the session (first-party, transcript+hooks) or bring
 their own stdio bridge — the relay treats both identically.
 
 The attach-orc side lives in `src/cli/attach-orc.ts` (bridge),
@@ -376,7 +376,7 @@ fallback) closes it with a `done` frame.
   default, `hub`/`tui` via args, state in the `/data` volume
   (`XDG_DATA_HOME`), port published loopback-only by default. The
   container is the relay half ONLY: no `claude`, no bridge, no hooks
-  inside it; `/attach-orc` runs on the host and dials the published
+  inside it; `/orc` runs on the host and dials the published
   port. Do not bake a bridge or claude into the image.
 - PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
   and the icon PNGs are checked in as static files and served

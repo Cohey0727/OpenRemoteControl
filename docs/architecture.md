@@ -188,13 +188,13 @@ Keeping process startup outside open-rc is deliberate:
   exchanges files with the `open-rc hook` handlers; see §3.5). Two
   earlier helpers that launched subprocesses — the spawning
   `attach-orc` and `attach-tmux` — were built and removed on
-  2026-07-02; the same day's `/attach-orc` goal was then implemented
+  2026-07-02; the same day's `/orc` goal was then implemented
   spawn-free. Users can still bring any bridge of their own to
   `/agent`.
 
 ### 3.5 The `attach-orc` shared-session bridge
 
-`/attach-orc`, typed inside a running interactive Claude Code session,
+`/orc`, typed inside a running interactive Claude Code session,
 shares THAT session:
 
 ```mermaid
@@ -215,7 +215,7 @@ Components:
 
 - `src/transcript/locate.ts` — cwd → project transcript dir (every
   non-alphanumeric character becomes `-`) → newest `*.jsonl` = the
-  current session (it just wrote `/attach-orc` to itself).
+  current session (it just wrote `/orc` to itself).
 - `src/transcript/translate.ts` — transcript entry → BridgeFrames
   (`user`/`text`/`thinking`/`tool_use`/`tool_result`), dropping
   sidechains, meta entries, `<command-…>` wrappers, and
@@ -238,7 +238,7 @@ Components:
   duplicate-clientId register error.
 
 The bridge holds no conversation state of its own — kill it and
-nothing is lost; re-running `/attach-orc` re-replays the transcript.
+nothing is lost; re-running `/orc` re-replays the transcript.
 
 ---
 

@@ -6,14 +6,14 @@ environment-specific deploy files (hosts, domains, account IDs stay in
 your local tooling); this document is the pattern book.
 
 In every layout the split is the same: **the relay runs in the cloud;
-`claude`, the `/attach-orc` bridge, and the Claude Code hooks stay on
+`claude`, the `/orc` bridge, and the Claude Code hooks stay on
 the machine where your session lives** and dial the relay's public
 URL. Your phone/browser opens the same URL.
 
 ```mermaid
 flowchart LR
     phone["phone / browser"] -- wss --> serve["open-rc serve<br/>(one container, in the cloud)"]
-    machine["your machine<br/>claude + /attach-orc"] -- wss --> serve
+    machine["your machine<br/>claude + /orc"] -- wss --> serve
 ```
 
 ---
@@ -189,6 +189,6 @@ In all cases the client side is identical:
 
 ```bash
 export ORC_BASE_URL=https://<your-relay-domain>
-/attach-orc            # inside claude
+/orc            # inside claude
 open-rc tui            # terminal view of the same session
 ```

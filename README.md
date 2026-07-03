@@ -71,9 +71,9 @@ bound to `127.0.0.1` by default because the relay has no auth; widen
 it deliberately (see [`SECURITY.md`](./SECURITY.md)).
 
 The container never runs `claude` — it is the relay half only.
-`/attach-orc` (the bridge and the Claude Code hooks) runs on the host
+`/orc` (the bridge and the Claude Code hooks) runs on the host
 next to your `claude` and dials the published port, so the flow is
-identical: `docker compose up -d`, then `/attach-orc` inside your
+identical: `docker compose up -d`, then `/orc` inside your
 session. `make docker-serve` / `make docker-logs` / `make docker-stop`
 wrap the same thing.
 
@@ -85,7 +85,7 @@ upgrades, troubleshooting: [`docs/docker.md`](./docs/docker.md).
 open-rc **shares an already-running `claude` — it never starts one.**
 There are two ways to feed the relay:
 
-1. **`/attach-orc` (recommended).** Share the interactive Claude Code
+1. **`/orc` (recommended).** Share the interactive Claude Code
    session you are already sitting in — history, live stream, and
    two-way prompts — with one slash command. No spawning: the bridge
    reads the session's own transcript and the Claude Code hooks carry
@@ -94,10 +94,10 @@ There are two ways to feed the relay:
    yourself and pipe its stdio to the relay's `/agent` WebSocket.
 
 Run `make setup` once; it installs the `open-rc` launcher on your
-PATH, the open-rc Claude Code hooks, and the `/attach-orc` command:
+PATH, the open-rc Claude Code hooks, and the `/orc` command:
 
 ```bash
-make setup          # launcher + hooks + /attach-orc (override BIN_DIR)
+make setup          # launcher + hooks + /orc (override BIN_DIR)
 open-rc serve       # → http://127.0.0.1:7322
 ```
 
@@ -110,7 +110,7 @@ relay URL — where should this machine attach sessions?
 
 Answer with a remote relay (a VPS, a Docker host) and the launcher
 bakes it in as the default `ORC_BASE_URL` for every `open-rc` run —
-`/attach-orc`, `tui`, and the hooks all target it with zero shell
+`/orc`, `tui`, and the hooks all target it with zero shell
 configuration. Empty answer = local default. A value already exported
 in your environment still wins. Non-interactive runs skip the
 question (`make setup ORC_BASE_URL=…` answers it up front); re-run
@@ -119,12 +119,12 @@ question (`make setup ORC_BASE_URL=…` answers it up front); re-run
 If `~/.local/bin` isn't on your PATH, `make setup` prints the one-line
 fix. `make teardown` removes everything again.
 
-### Share the session you are already in (`/attach-orc`)
+### Share the session you are already in (`/orc`)
 
 Inside any running Claude Code session, type:
 
 ```
-/attach-orc
+/orc
 ```
 
 The session appears in the browser sidebar within a second or two,
@@ -135,7 +135,7 @@ exactly as before — prompts typed there show up in the browser, and
 vice versa. `open-rc tui` attaches to the same session for a shared
 terminal view.
 
-How it works, in one breath: `/attach-orc` starts `open-rc attach-orc`
+How it works, in one breath: `/orc` starts `open-rc attach-orc`
 in the background, which locates the session's own transcript JSONL
 (the file Claude Code is already writing under `~/.claude/projects/…`),
 replays it to `serve` as history, and tails it live — that is the
@@ -336,7 +336,7 @@ open-rc tui
   --client-id        <s>   Session to attach to (auto-picks when omitted)
   # env: ORC_BASE_URL   base URL of a remote serve; /ws is derived from it
 
-open-rc attach-orc          # normally started by the /attach-orc command
+open-rc attach-orc          # normally started by the /orc command
   --server           <u>   /agent WebSocket URL (default from ORC_BASE_URL,
                            else ws://127.0.0.1:7322/agent)
   --label            <s>   Sidebar label (default user@host)
@@ -367,7 +367,7 @@ That is the entire CLI surface. There is no `open-rc client` and no
 flowchart TB
     subgraph local["LOCAL MACHINE (default)"]
         browser["Browser (SPA)"] <-- "WS /ws · frames" --> serve["open-rc serve<br/>(pure relay)"]
-        bridge["bridge — /attach-orc, or your own<br/>(websocat, a small Bun script, anything)"] <-- "WS /agent" --> serve
+        bridge["bridge — /orc, or your own<br/>(websocat, a small Bun script, anything)"] <-- "WS /agent" --> serve
         claude["claude<br/>(user's process, user started it)"] --- bridge
     end
 ```
@@ -379,7 +379,7 @@ flowchart TB
     end
     phone["Browser (phone)"] -- "WS /ws" --> serve2
     subgraph machine["your machine"]
-        claude2["claude (user's process)"] --- bridge2["bridge<br/>(/attach-orc or user-owned)"]
+        claude2["claude (user's process)"] --- bridge2["bridge<br/>(/orc or user-owned)"]
     end
     bridge2 -- "WS /agent" --> serve2
 ```
@@ -433,12 +433,12 @@ ui/
                                   # (transpiled on the fly by Bun, no build step)
 
 commands/
-└── attach-orc.md                # the /attach-orc slash command (symlinked by make setup)
+└── attach-orc.md                # the /orc slash command (symlinked by make setup)
 
 scripts/
 ├── build.ts                     # DISTRIBUTION ONLY — cross-compile to linux/darwin/windows
 ├── build-icons.ts               # Rasterise ui/icon.svg into the PWA + iOS PNGs (dev-only)
-└── install-hooks.ts             # make setup helper: hooks + /attach-orc into ~/.claude
+└── install-hooks.ts             # make setup helper: hooks + /orc into ~/.claude
 ```
 
 tests/                           # unit + integration (no e2e yet)
@@ -493,7 +493,7 @@ bring your own stdio bridge; the relay treats both identically.
   enrollment.
 - It does **not** take over external `claude` sessions. The server
   has no way to find one; `attach-orc` only ever *reads* the
-  transcript of the session that invited it via `/attach-orc`.
+  transcript of the session that invited it via `/orc`.
 - It does **not** create clients from the browser. The browser shows
   what bridges are currently connected; it cannot start one. To
   start a new "session" in the sidebar, open another bridge from
@@ -578,7 +578,7 @@ still need to learn per provider.
 - **Claude Code CLI** (`claude` on `PATH`) — required only on the
   machine where the user runs `claude`. The server does not need it.
 - A browser, for the UI
-- To share an interactive session: `make setup` (hooks + `/attach-orc`).
+- To share an interactive session: `make setup` (hooks + `/orc`).
   To bridge a stream-json `claude` yourself: any way to pipe its stdio
   over WebSocket.
 
@@ -589,7 +589,7 @@ still need to learn per provider.
 **Phases 1–8 complete.** `open-rc serve` is a pure WebSocket relay
 that never starts or manages `claude`. The CLI exposes `serve`, `hub`,
 `tui`, `attach-orc`, and `hook`; none of them launch a process.
-`/attach-orc` shares the interactive Claude Code session you are
+`/orc` shares the interactive Claude Code session you are
 already in — transcript-tail out, hook-delivery in. (An earlier
 `attach-orc` that *spawned* `claude`, and `attach-tmux`, were removed
 as out of scope; the current `attach-orc` shares an existing session
@@ -605,7 +605,7 @@ and spawns nothing.)
 | 6     | Hardening (tests, typecheck, cross-build)| ✓      |
 | 7     | **Relay pivot** — server never starts processes     | ✓      |
 | 8.1   | PWA install + offline app-shell cache     | ✓      |
-| 8.2   | **Shared sessions** — `/attach-orc` transcript bridge + hook delivery | ✓ |
+| 8.2   | **Shared sessions** — `/orc` transcript bridge + hook delivery | ✓ |
 
 ### UI at a glance
 

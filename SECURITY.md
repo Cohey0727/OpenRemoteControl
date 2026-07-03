@@ -74,11 +74,11 @@ forwards user prompts and tool-call requests to Claude Code.
   entire CLI is `serve`, `hub`, `tui`, `attach-orc`, and `hook`, each
   of which runs only its own process. The user runs `claude`
   themselves; a `claude` in another terminal is untouched unless its
-  own session invokes `/attach-orc`. There is no
+  own session invokes `/orc`. There is no
   `/api/external-sessions` endpoint, no `claim_external_session` WS
   frame, and no `/internal/hook` PreToolUse endpoint.
 
-## Shared-session (`/attach-orc`) surface
+## Shared-session (`/orc`) surface
 
 Sharing a session widens what a viewer can see and do — by design.
 Know what you are enabling:
@@ -99,14 +99,14 @@ Know what you are enabling:
   (installed by `make setup` into `~/.claude/settings.json`) exit
   immediately unless `~/.open-rc/attach/<sessionId>/bridge.json` has a
   heartbeat fresher than 45 s — i.e. unless that specific session ran
-  `/attach-orc` and the bridge is alive. Delivery stops within 45 s of
+  `/orc` and the bridge is alive. Delivery stops within 45 s of
   the bridge dying.
 - **Coordination state, not conversation state.** The attach dir
   holds queued prompts transiently (drained each hook), plus markers
   and a heartbeat; the bridge removes the dir on exit. Conversation
   content persists only where it always did — the transcript Claude
   Code itself writes.
-- **`make teardown`** removes the hooks and the `/attach-orc` command
+- **`make teardown`** removes the hooks and the `/orc` command
   again.
 
 ## Reporting a vulnerability

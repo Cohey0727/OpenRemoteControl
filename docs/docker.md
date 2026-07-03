@@ -2,7 +2,7 @@
 
 One image contains the whole CLI. `serve` — the relay + SPA — is the
 default command, so "start the server" is one line. The container is
-the **relay half only**: `claude`, the `/attach-orc` bridge, and the
+the **relay half only**: `claude`, the `/orc` bridge, and the
 Claude Code hooks always run on the host (or wherever your `claude`
 lives) and dial the container's published port.
 
@@ -12,7 +12,7 @@ flowchart LR
         serve["open-rc serve<br/>UI · /ws · /agent"] --> data[("/data volume<br/>(VAPID · push · audit)")]
     end
     subgraph host["Host (your machine)"]
-        claude["claude + /attach-orc bridge"]
+        claude["claude + /orc bridge"]
         browser["browser → http://127.0.0.1:7322"]
     end
     claude <-- WS --> serve
@@ -33,16 +33,16 @@ That's it. The relay is up:
 
 - UI: <http://127.0.0.1:7322/>
 - browsers / `tui`: `ws://127.0.0.1:7322/ws`
-- bridges (`/attach-orc` lands here): `ws://127.0.0.1:7322/agent`
+- bridges (`/orc` lands here): `ws://127.0.0.1:7322/agent`
 
 Then share a session exactly as without Docker — inside any running
 Claude Code session on the host:
 
 ```
-/attach-orc
+/orc
 ```
 
-(`/attach-orc` needs the host-side setup once: `make setup` installs
+(`/orc` needs the host-side setup once: `make setup` installs
 the `open-rc` launcher, the Claude Code hooks, and the slash command.
 Docker replaces only the server, not the bridge side.)
 
@@ -124,7 +124,7 @@ Docker awareness needed, because the defaults already point at
 `127.0.0.1:7322`:
 
 ```bash
-/attach-orc                  # inside claude — works as-is
+/orc                  # inside claude — works as-is
 open-rc tui                  # host tui — works as-is
 ```
 
@@ -134,12 +134,12 @@ once, everything derives `/ws` and `/agent` from it:
 ```bash
 export ORC_BASE_URL=http://127.0.0.1:9000        # remapped local port
 export ORC_BASE_URL=https://orc.example.com      # VPS behind TLS proxy
-/attach-orc                                       # bridge dials $ORC_BASE_URL/agent
+/orc                                       # bridge dials $ORC_BASE_URL/agent
 ```
 
 Typical VPS layout: the container runs on the VPS
 (`-p 127.0.0.1:7322:7322` + a TLS-terminating, authenticated reverse
-proxy in front); your laptop runs `claude`, and `/attach-orc` with
+proxy in front); your laptop runs `claude`, and `/orc` with
 `ORC_BASE_URL=https://…` pushes the session up to it; your phone opens
 the proxy URL.
 
@@ -185,7 +185,7 @@ server {
 3. Certificate via certbot webroot (add the usual port-80 block with
    `/.well-known/acme-challenge/`), DNS A record → the VPS.
 4. From your machine: `export ORC_BASE_URL=https://orc.example.com`,
-   then `/attach-orc` inside claude. Browser/phone opens the domain.
+   then `/orc` inside claude. Browser/phone opens the domain.
 
 The relay has no authentication of its own — decide deliberately
 whether the domain is reachable only via VPN/allowlist or gets an

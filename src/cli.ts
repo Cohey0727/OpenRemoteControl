@@ -14,7 +14,7 @@
  *               current directory: replays + tails its transcript to
  *               `/agent` and queues browser prompts for the Claude
  *               Code hooks to deliver. Started in the background by
- *               the `/attach-orc` slash command.
+ *               the `/orc` slash command.
  *   hook        Claude Code hook handlers (stop|prompt|notify|end) —
  *               the queue-delivery half of attach-orc. Wired into
  *               `~/.claude/settings.json` by `make setup`.
@@ -75,7 +75,7 @@ if (command === 'serve' || command === '') {
     ` ${amber}◉${off} ${dim}ws${off}      ${cyan}ws://${host}:${port}/ws${off}     ${dim}browsers / tui${off}`,
   );
   console.log(
-    ` ${amber}◉${off} ${dim}agent${off}   ${cyan}ws://${host}:${port}/agent${off}  ${dim}bridges — /attach-orc lands here${off}`,
+    ` ${amber}◉${off} ${dim}agent${off}   ${cyan}ws://${host}:${port}/agent${off}  ${dim}bridges — /orc lands here${off}`,
   );
 
   const shutdown = async () => {

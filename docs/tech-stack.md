@@ -320,7 +320,7 @@ project. `serve`, `hub`, `tui`, `attach-orc`, and `hook` are the whole
 CLI, and each process's tree contains only itself.
 
 If the user wants a `claude` running, they run it themselves. To share
-that session with the browser they either type `/attach-orc` inside it
+that session with the browser they either type `/orc` inside it
 (first-party: the bridge tails the session's own transcript JSONL and
 the Claude Code hooks deliver browser prompts back — file I/O and
 WebSockets only, see `docs/architecture.md` §3.5) or write their own
@@ -328,7 +328,7 @@ bridge that pipes `claude`'s stream-json to `/agent`.
 
 > **Spawning remains out of scope.** The original `attach-orc`
 > (spawned `claude --print`) and `attach-tmux` (drove tmux) were
-> **removed on 2026-07-02**; the same-day `/attach-orc` requirement
+> **removed on 2026-07-02**; the same-day `/orc` requirement
 > was implemented spawn-free. Re-adding process launching is a
 > deliberate decision, never a convenience reach.
 
@@ -341,7 +341,7 @@ anchor lives in the launcher and a `git pull` updates behavior with no
 rebuild. It then runs `scripts/install-hooks.ts`, which merges the
 Stop / UserPromptSubmit / SessionEnd hook entries into
 `~/.claude/settings.json` (idempotent; user hooks preserved) and
-symlinks `commands/attach-orc.md` into `~/.claude/commands/`.
+symlinks `commands/orc.md` into `~/.claude/commands/`.
 `make teardown` reverses all of it.
 
 ---
