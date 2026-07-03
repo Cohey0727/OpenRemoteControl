@@ -141,9 +141,10 @@ rebuilds the same UX against any provider by relaying the public
   It writes one launcher script to `~/.local/bin` (override `BIN_DIR`):
   `#!/bin/sh; exec bun run <checkout>/src/cli.ts … "$@"`, so the
   abs-path anchor lives in the launcher and a `git pull` updates
-  behavior with no reinstall. `make setup ORC_BASE_URL=<url>` bakes a
-  default relay URL into the launcher (`:=` — an env value still
-  wins; re-run setup without it to clear). It then runs
+  behavior with no reinstall. Setup ASKS for the relay URL on the CLI
+  (interactive runs; `ORC_BASE_URL=<url>` answers it up front, empty
+  = no default) and bakes the answer into the launcher (`:=` — an env
+  value still wins; re-run setup to change/clear). It then runs
   `scripts/install-hooks.ts`,
   which idempotently merges the Stop/UserPromptSubmit/SessionEnd hook
   entries (`<BIN_DIR>/open-rc hook <event>`) into

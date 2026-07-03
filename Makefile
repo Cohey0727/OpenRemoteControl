@@ -96,19 +96,31 @@ install: ## Install deps (bun install)
 	@echo "Done. Run \`make serve\` (or \`bun run serve\`) to launch open-rc."
 
 .PHONY: setup
-setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command (ORC_BASE_URL=… bakes a default relay URL into the launcher)
+setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, and /attach-orc command (asks for your relay URL)
 	@# Install the launcher on PATH. It's a thin wrapper around the
 	@# current source, so `git pull` updates behavior with no rebuild.
-	@# With ORC_BASE_URL=… the launcher carries that relay URL as the
-	@# default (`:=` — a value already in the environment still wins),
-	@# so `open-rc tui`, `/attach-orc`, and the hooks all target it
-	@# without any shell-rc editing. Re-run setup to change or clear it.
+	@#
+	@# The relay URL is ASKED on the CLI (interactive runs): answer with
+	@# your relay (e.g. https://orc.example.com) and the launcher bakes
+	@# it in as the ORC_BASE_URL default (`:=` — a value already in the
+	@# environment still wins), so `open-rc tui`, `/attach-orc`, and the
+	@# hooks all target it with zero shell configuration. Empty answer =
+	@# local default (ws://127.0.0.1:7322). Non-interactive runs skip
+	@# the question; `make setup ORC_BASE_URL=…` answers it up front.
+	@# Re-run setup any time to change or clear the default.
 	@mkdir -p $(BIN_DIR)
-	@if [ -n "$(ORC_BASE_URL)" ]; then \
+	@URL='$(ORC_BASE_URL)'; \
+	if [ -z "$$URL" ] && [ -t 0 ]; then \
+	  printf ' %s\n' '$(BOLD)relay URL$(OFF) $(DIM)— where should this machine attach sessions?$(OFF)'; \
+	  printf ' %s ' '$(DIM)(e.g. https://orc.example.com — empty = local 127.0.0.1:7322)$(OFF)$(AMBER)›$(OFF)'; \
+	  read -r URL || URL=''; \
+	fi; \
+	if [ -n "$$URL" ]; then \
 	  printf '%s\n' '#!/bin/sh' \
-	    ': "$${ORC_BASE_URL:=$(ORC_BASE_URL)}"' \
+	    ': "$${ORC_BASE_URL:='"$$URL"'}"' \
 	    'export ORC_BASE_URL' \
 	    'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc; \
+	  printf ' %s\n' '$(AMBER)◉$(OFF) $(DIM)relay$(OFF)     $(CYAN)'"$$URL"'$(OFF) $(DIM)(launcher default — env still wins)$(OFF)'; \
 	else \
 	  printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc; \
 	fi
@@ -124,9 +136,6 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / SessionEnd)$(OFF)' \
 	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md'
-	@if [ -n "$(ORC_BASE_URL)" ]; then \
-	  printf '%s\n' ' $(AMBER)◉$(OFF) $(DIM)relay$(OFF)     $(CYAN)$(ORC_BASE_URL)$(OFF) $(DIM)(launcher default — env still wins)$(OFF)'; \
-	fi
 	@printf '%s\n' \
 	  '' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
