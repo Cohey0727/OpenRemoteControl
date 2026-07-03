@@ -29,3 +29,9 @@ captures/
 
 # logs
 *.log
+
+# Environment-specific deploy kits live OUTSIDE the codebase: anything
+# under vps/ is one operator's local tooling (hosts, domains, scripts)
+# and is never committed. The repo documents deployment patterns in
+# docs/ only (see docs/docker.md); the code depends on no environment.
+vps/

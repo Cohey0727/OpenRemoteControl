@@ -139,6 +139,54 @@ proxy in front); your laptop runs `claude`, and `/attach-orc` with
 `ORC_BASE_URL=https://…` pushes the session up to it; your phone opens
 the proxy URL.
 
+### Behind a host Nginx (VPS pattern)
+
+The repo carries **no** environment-specific deploy files — hosts,
+domains, and scripts are your local tooling (keep them under `vps/`,
+which is gitignored). The pattern itself, for a VPS whose host Nginx
+routes by `server_name` and can host other services beside open-rc:
+
+1. rsync the repo to the VPS, `docker compose up -d --build` there —
+   the container stays on `127.0.0.1:7322`.
+2. Add a server block for your domain. The only open-rc-specific
+   requirement is **WebSocket upgrade on `/ws` and `/agent`** with a
+   long read timeout:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name orc.example.com;
+    ssl_certificate     /etc/letsencrypt/live/orc.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/orc.example.com/privkey.pem;
+
+    # WebSockets: browsers/tui (/ws) and bridges (/agent)
+    location ~ ^/(ws|agent)$ {
+        proxy_pass http://127.0.0.1:7322;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_buffering off;
+        proxy_read_timeout 7d;
+    }
+
+    # SPA shell, assets, deep links, push API
+    location / {
+        proxy_pass http://127.0.0.1:7322;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+3. Certificate via certbot webroot (add the usual port-80 block with
+   `/.well-known/acme-challenge/`), DNS A record → the VPS.
+4. From your machine: `export ORC_BASE_URL=https://orc.example.com`,
+   then `/attach-orc` inside claude. Browser/phone opens the domain.
+
+The relay has no authentication of its own — decide deliberately
+whether the domain is reachable only via VPN/allowlist or gets an
+auth layer in the proxy (see `SECURITY.md`).
+
 ## Other commands, same image
 
 The image's entrypoint is the open-rc CLI, so every command rides it:
