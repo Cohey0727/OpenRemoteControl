@@ -665,6 +665,71 @@
         color: var(--status-error);
       }
 
+      /* AskUserQuestion relayed as an interactive card. Amber = your
+         control point, same as Send/Allow. */
+      .msg.question {
+        border-color: var(--accent, #f97316);
+      }
+      .msg.question.answered {
+        opacity: 0.75;
+      }
+      .q-block { margin: 0.35rem 0; }
+      .q-header {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--accent, #f97316);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.15rem;
+      }
+      .q-text { margin-bottom: 0.45rem; }
+      .q-opts {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+      .q-opt {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.1rem;
+        padding: 0.45rem 0.7rem;
+        background: transparent;
+        border: 1px solid var(--hairline);
+        border-radius: 6px;
+        color: var(--fg);
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+      }
+      .q-opt:hover:not(:disabled) { border-color: var(--accent, #f97316); }
+      .q-opt.picked {
+        border-color: var(--accent, #f97316);
+        background: rgba(249, 115, 22, 0.08);
+      }
+      .q-opt:disabled { cursor: default; opacity: 0.6; }
+      .q-opt-label { font-weight: 600; }
+      .q-opt-desc {
+        font-size: 0.8rem;
+        color: var(--fg-subtle);
+      }
+      .q-submit {
+        margin-top: 0.5rem;
+        padding: 0.4rem 0.9rem;
+        background: var(--accent, #f97316);
+        border: none;
+        border-radius: 6px;
+        color: #101010;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .q-answered {
+        margin-top: 0.4rem;
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        color: var(--fg-subtle);
+      }
+
       footer.composer {
         border-top: 1px solid var(--hairline);
         padding: 0.5rem 1.6rem 0.55rem;

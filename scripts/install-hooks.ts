@@ -64,6 +64,12 @@ function addedHooks(bin: string): Record<string, HookGroup[]> {
       },
     ],
     UserPromptSubmit: [{ hooks: [{ type: 'command', command: `${bin} hook prompt` }] }],
+    PreToolUse: [
+      {
+        matcher: 'AskUserQuestion',
+        hooks: [{ type: 'command', command: `${bin} hook ask`, timeout: STOP_TIMEOUT_S }],
+      },
+    ],
     Notification: [{ hooks: [{ type: 'command', command: `${bin} hook notify` }] }],
     SessionEnd: [{ hooks: [{ type: 'command', command: `${bin} hook end` }] }],
   };

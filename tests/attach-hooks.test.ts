@@ -12,13 +12,16 @@ import {
   browserTurnMarkerExists,
   createAttachDir,
   endMarkerExists,
+  readQuestion,
   stopMarkerMtime,
   touchBrowserTurnMarker,
+  writeAnswer,
   writeAttachedCount,
   writeBridgeInfo,
 } from '../src/attach/state.ts';
 import {
   parseHookInput,
+  runAskHook,
   runEndHook,
   runNotifyHook,
   runPromptHook,
@@ -201,5 +204,58 @@ describe('runNotifyHook', () => {
     await appendQueue(dir, 'stuck message');
     const result = await runNotifyHook({ session_id: sessionId }, { baseDir: base });
     expect(result.output?.systemMessage as string).toContain('waiting');
+  });
+});
+
+describe('runAskHook (AskUserQuestion relay)', () => {
+  const askInput = (sessionId: string) => ({
+    session_id: sessionId,
+    tool_name: 'AskUserQuestion',
+    tool_input: {
+      questions: [
+        {
+          question: 'Apple or banana?',
+          header: 'Fruit',
+          options: [{ label: 'APPLE' }, { label: 'BANANA', description: 'the yellow one' }],
+        },
+      ],
+    },
+  });
+
+  test('no bridge or CLI-driven mode → no opinion (native selector)', async () => {
+    const stray = crypto.randomUUID();
+    expect((await runAskHook(askInput(stray), { baseDir: base })).output).toBeUndefined();
+
+    const { sessionId } = await liveBridgeSession(); // bridge alive, but not browser-driven
+    expect((await runAskHook(askInput(sessionId), { baseDir: base })).output).toBeUndefined();
+  });
+
+  test('browser-driven: parks the question, waits, returns the answer as deny reason', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await touchBrowserTurnMarker(dir);
+
+    // Simulate the bridge: pick up the parked question, write an answer.
+    const answering = (async () => {
+      for (let i = 0; i < 50; i++) {
+        const q = await readQuestion(dir);
+        if (q) {
+          await writeAnswer(dir, q.requestId, [
+            { question: 'Apple or banana?', header: 'Fruit', labels: ['BANANA'] },
+          ]);
+          return q;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error('question never parked');
+    })();
+
+    const result = await runAskHook(askInput(sessionId), { baseDir: base });
+    await answering;
+    const specific = result.output?.hookSpecificOutput as Record<string, unknown>;
+    expect(specific.permissionDecision).toBe('deny');
+    expect(specific.permissionDecisionReason as string).toContain('BANANA');
+    expect(specific.permissionDecisionReason as string).toContain('do NOT ask again');
+    // The parked question is cleaned up either way.
+    expect(await readQuestion(dir)).toBeNull();
   });
 });

@@ -334,8 +334,20 @@ type ServerBrowserMessage =
       tool: string;
       input: Record<string, unknown>;
     }
+  | { type: 'question'; clientId: string; requestId: string; questions: QuestionItem[] }
   | { type: 'done'; clientId: string; cost?: number; duration_ms?: number; ts?: number }
   | { type: 'error'; clientId: string; message: string };
+
+interface QuestionOption {
+  label: string;
+  description?: string;
+}
+interface QuestionItem {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: QuestionOption[];
+}
 
 interface PermissionPrompt {
   requestId: string;
@@ -351,6 +363,7 @@ type UiMessage =
   | { kind: 'tool_result'; output: string }
   | { kind: 'system'; text: string }
   | { kind: 'divider'; text: string }
+  | { kind: 'question'; requestId: string; questions: QuestionItem[] }
   | { kind: 'error'; text: string };
 
 /* ============================================================
@@ -368,6 +381,9 @@ const [promptsByClient, setPromptsByClient] = signal<Record<string, PermissionPr
 // cleared when the final `text` frame (or done/error) arrives; never
 // part of messagesByClient, never replayed.
 const [streamByClient, setStreamByClient] = signal<Record<string, string>>({});
+// requestId → answer summary, for questions answered from THIS view.
+// Read inside messageView so answered cards re-render disabled.
+const [answeredQuestions, setAnsweredQuestions] = signal<Record<string, string>>({});
 const [mobileView, setMobileView] = signal<'sidebar' | 'chat'>('sidebar');
 const [mobile, setMobile] = signal(isMobile());
 // Ticks every 15 s so relative "last activity" timestamps advance on
@@ -656,6 +672,13 @@ function handleServer(msg: ServerBrowserMessage): void {
     case 'tool_result':
       appendFor(msg.clientId, { kind: 'tool_result', output: msg.output });
       break;
+    case 'question':
+      appendFor(msg.clientId, {
+        kind: 'question',
+        requestId: msg.requestId,
+        questions: msg.questions,
+      });
+      break;
     case 'permission_request':
       setPromptsByClient((prev) => ({
         ...prev,
@@ -851,6 +874,8 @@ function messageView(_cid: string, m: UiMessage): HTMLElement {
         h('summary', {}, h('span', { class: 'name' }, 'result')),
         h('pre', { class: 'body' }, m.output),
       );
+    case 'question':
+      return questionView(_cid, m);
     case 'system':
       return h('div', { class: 'msg system' }, h('div', { class: 'body' }, m.text));
     case 'divider':
@@ -863,6 +888,90 @@ function messageView(_cid: string, m: UiMessage): HTMLElement {
         h('div', { class: 'body' }, m.text),
       );
   }
+}
+
+/**
+ * Interactive card for a relayed AskUserQuestion. Single-select
+ * questions answer on click; multi-select (or multi-question) cards
+ * collect choices and submit once. Answered cards render inert — the
+ * answer travels to the session via `question_response` and the
+ * session's reply arrives as normal frames.
+ */
+function questionView(cid: string, m: Extract<UiMessage, { kind: 'question' }>): HTMLElement {
+  const answered = answeredQuestions()[m.requestId];
+  const needsSubmit = m.questions.length > 1 || m.questions.some((q) => q.multiSelect);
+  const picked = new Map<number, Set<string>>();
+
+  const sendAnswers = (): void => {
+    const answers = m.questions.map((q, i) => ({
+      question: q.question,
+      ...(q.header !== undefined ? { header: q.header } : {}),
+      labels: [...(picked.get(i) ?? [])],
+    }));
+    if (answers.every((a) => a.labels.length === 0)) return;
+    send({ type: 'question_response', clientId: cid, requestId: m.requestId, answers });
+    setBusyFor(cid, true);
+    setAnsweredQuestions((prev) => ({
+      ...prev,
+      [m.requestId]: answers
+        .map((a) => a.labels.join(', '))
+        .filter((t) => t !== '')
+        .join(' · '),
+    }));
+  };
+
+  const blocks = m.questions.map((q, qi) => {
+    const buttons = q.options.map((opt) => {
+      const btn = h(
+        'button',
+        {
+          class: 'q-opt',
+          type: 'button',
+          disabled: answered !== undefined,
+          onclick: () => {
+            if (answeredQuestions()[m.requestId] !== undefined) return;
+            const set = picked.get(qi) ?? new Set<string>();
+            if (q.multiSelect) {
+              set.has(opt.label) ? set.delete(opt.label) : set.add(opt.label);
+              picked.set(qi, set);
+              btn.classList.toggle('picked');
+            } else {
+              picked.set(qi, new Set([opt.label]));
+              if (needsSubmit) {
+                for (const el of btn.parentElement?.querySelectorAll('.q-opt') ?? [])
+                  el.classList.remove('picked');
+                btn.classList.add('picked');
+              } else {
+                sendAnswers();
+              }
+            }
+          },
+        },
+        h('span', { class: 'q-opt-label' }, opt.label),
+        opt.description ? h('span', { class: 'q-opt-desc' }, opt.description) : null,
+      );
+      return btn;
+    });
+    return h(
+      'div',
+      { class: 'q-block' },
+      q.header ? h('div', { class: 'q-header' }, q.header) : null,
+      h('div', { class: 'q-text' }, q.question),
+      h('div', { class: 'q-opts' }, buttons),
+    );
+  });
+
+  return h(
+    'div',
+    { class: `msg question${answered !== undefined ? ' answered' : ''}` },
+    h('div', { class: 'role' }, 'Question'),
+    blocks,
+    answered !== undefined
+      ? h('div', { class: 'q-answered' }, `answered: ${answered}`)
+      : needsSubmit
+        ? h('button', { class: 'q-submit', type: 'button', onclick: sendAnswers }, 'Send answer')
+        : null,
+  );
 }
 
 function activeBusy(): boolean {

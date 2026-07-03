@@ -93,6 +93,22 @@ export const SendPrompt = z.object({
 });
 export type SendPrompt = z.infer<typeof SendPrompt>;
 
+export const QuestionAnswer = z.object({
+  question: z.string().optional(),
+  header: z.string().optional(),
+  labels: z.array(z.string()),
+});
+export type QuestionAnswer = z.infer<typeof QuestionAnswer>;
+
+/** Browser/tui answers a relayed `question`. */
+export const QuestionResponse = z.object({
+  type: z.literal('question_response'),
+  clientId: z.string().min(1),
+  requestId: z.string().min(1),
+  answers: z.array(QuestionAnswer),
+});
+export type QuestionResponse = z.infer<typeof QuestionResponse>;
+
 export const PermissionResponse = z.object({
   type: z.literal('permission_response'),
   clientId: z.string().min(1),
@@ -107,6 +123,7 @@ export const BrowserClientMessage = z.discriminatedUnion('type', [
   Detach,
   SendPrompt,
   PermissionResponse,
+  QuestionResponse,
 ]);
 export type BrowserClientMessage = z.infer<typeof BrowserClientMessage>;
 
@@ -198,6 +215,36 @@ export const ToolResultMessage = WithClientId.extend({
 });
 export type ToolResultMessage = z.infer<typeof ToolResultMessage>;
 
+/** One selectable option of an AskUserQuestion question. */
+export const QuestionOption = z.object({
+  label: z.string(),
+  description: z.string().optional(),
+});
+export type QuestionOption = z.infer<typeof QuestionOption>;
+
+export const QuestionItem = z.object({
+  question: z.string(),
+  header: z.string().optional(),
+  multiSelect: z.boolean().optional(),
+  options: z.array(QuestionOption),
+});
+export type QuestionItem = z.infer<typeof QuestionItem>;
+
+/**
+ * The session is showing an interactive choice (Claude Code's
+ * AskUserQuestion tool). Relayed to attached viewers so the choice can
+ * be answered from the browser/tui; the answer travels back as
+ * `question_response`. Transient like `permission_request` — never
+ * recorded to history (a replayed stale question would invite answers
+ * nobody is waiting for).
+ */
+export const QuestionMessage = WithClientId.extend({
+  type: z.literal('question'),
+  requestId: z.string(),
+  questions: z.array(QuestionItem),
+});
+export type QuestionMessage = z.infer<typeof QuestionMessage>;
+
 export const PermissionRequestMessage = WithClientId.extend({
   type: z.literal('permission_request'),
   requestId: z.string(),
@@ -231,6 +278,7 @@ export const RelayedMessage = z.discriminatedUnion('type', [
   ToolUseMessage,
   ToolResultMessage,
   PermissionRequestMessage,
+  QuestionMessage,
   DoneMessage,
   ErrorMessage,
 ]);
@@ -249,6 +297,7 @@ export const ServerBrowserMessage = z.discriminatedUnion('type', [
   ToolUseMessage,
   ToolResultMessage,
   PermissionRequestMessage,
+  QuestionMessage,
   DoneMessage,
   ErrorMessage,
 ]);
@@ -303,6 +352,11 @@ export const BridgeFrame = z.discriminatedUnion('type', [
     requestId: z.string(),
     tool: z.string(),
     input: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    type: z.literal('question'),
+    requestId: z.string(),
+    questions: z.array(QuestionItem),
   }),
   z.object({
     type: z.literal('done'),
@@ -361,6 +415,11 @@ export const ServerToBridge = z.discriminatedUnion('type', [
     type: z.literal('permission_response'),
     requestId: z.string(),
     approved: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('question_response'),
+    requestId: z.string(),
+    answers: z.array(QuestionAnswer),
   }),
 ]);
 export type ServerToBridge = z.infer<typeof ServerToBridge>;

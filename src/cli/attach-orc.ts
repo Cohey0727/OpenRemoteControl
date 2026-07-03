@@ -44,8 +44,11 @@ import {
   browserTurnMarkerExists,
   createAttachDir,
   endMarkerExists,
+  readQuestion,
   removeAttachDir,
   stopMarkerMtime,
+  touchBrowserTurnMarker,
+  writeAnswer,
   writeAttachedCount,
   writeBridgeInfo,
 } from '../attach/state.ts';
@@ -245,6 +248,8 @@ export async function runAttachOrc(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let doneTimer: ReturnType<typeof setTimeout> | null = null;
   let lastStopMtime = await stopMarkerMtime(dir);
+  /** requestId of the last `question` frame relayed (dedupe). */
+  let lastQuestionId: string | null = null;
   /** Epoch ms of the last frame received from the server (the server
    *  keepalive-pings every 30 s, so silence means a dead link). */
   let lastServerActivity = Date.now();
@@ -386,6 +391,13 @@ export async function runAttachOrc(
         lastStopMtime = mtime;
         closeTurnFromStopMarker();
       }
+      // The `ask` hook parked a live AskUserQuestion — relay it to
+      // every viewer so the choice can be answered remotely.
+      const q = await readQuestion(dir);
+      if (q && q.requestId !== lastQuestionId) {
+        lastQuestionId = q.requestId;
+        send({ type: 'question', requestId: q.requestId, questions: q.questions });
+      }
       closeStuckTurn();
     })();
   }, MARKER_POLL_MS);
@@ -440,9 +452,25 @@ export async function runAttachOrc(
         }
         return;
       }
+      case 'question_response': {
+        if (typeof msg.requestId === 'string' && Array.isArray(msg.answers)) {
+          void writeAnswer(dir, msg.requestId, msg.answers).catch((err) => {
+            log(`open-rc attach-orc: failed to record answer: ${err}`);
+          });
+        }
+        return;
+      }
       case 'attached': {
         if (typeof msg.count === 'number') {
           void writeAttachedCount(dir, msg.count).catch(() => {});
+          // A viewer opening the session IS the remote-control intent:
+          // switch to browser-driven (unlimited listening) right away,
+          // so even the FIRST message can never miss a window. A prompt
+          // typed in the terminal switches back (UserPromptSubmit
+          // clears the marker), keeping attended terminals snappy.
+          if (msg.count > 0) {
+            void touchBrowserTurnMarker(dir).catch(() => {});
+          }
         }
         return;
       }

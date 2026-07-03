@@ -275,6 +275,21 @@ function makeBrowserHandlers(deps: WsHandlerDeps) {
         case 'permission_response':
           handlePermissionResponse(ws, msg.clientId, msg.requestId, msg.approved);
           break;
+        case 'question_response': {
+          const ok = sendToBridge(msg.clientId, {
+            type: 'question_response',
+            requestId: msg.requestId,
+            answers: msg.answers,
+          });
+          if (!ok) {
+            sendToBrowser(ws, {
+              type: 'error',
+              clientId: msg.clientId,
+              message: `unknown client: ${msg.clientId}`,
+            });
+          }
+          break;
+        }
         case 'list_clients':
           handleListClients(ws);
           break;
@@ -410,6 +425,7 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
       case 'tool_use':
       case 'tool_result':
       case 'permission_request':
+      case 'question':
       case 'error': {
         // Tag with clientId and forward to attached browsers.
         const tagged = { ...msg, clientId } as z.infer<typeof RelayedMessage>;
@@ -424,7 +440,13 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         //    content; replaying both would render the reply twice).
         // Bridge-observed `user` prompts (e.g. typed into the shared
         // terminal) ARE recorded, like the server's own send echoes.
-        if (msg.type !== 'permission_request' && msg.type !== 'text_delta') {
+        // `question` is transient like `permission_request`: a replayed
+        // stale choice would invite answers nobody is waiting for.
+        if (
+          msg.type !== 'permission_request' &&
+          msg.type !== 'text_delta' &&
+          msg.type !== 'question'
+        ) {
           recordHistory(clientId, tagged);
         }
         if (becameBusy) {

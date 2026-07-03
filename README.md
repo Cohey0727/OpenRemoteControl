@@ -145,9 +145,9 @@ them into the running session: the Stop hook picks them up at every
 turn end, and while a browser/tui viewer is attached it keeps a
 listening window open after each turn. The window is adaptive:
 normally short (45 s, `ORC_STOP_LINGER_MS`) so prompts you type in the
-terminal never wait long, but once a turn was DRIVEN from the browser
-the terminal is presumed unattended and the session listens
-**indefinitely** — a remote conversation never falls off a window
+terminal never wait long, but the moment a viewer ATTACHES (or a turn
+is driven from the browser) the session switches to remote mode and
+listens **indefinitely** — a remote conversation never falls off a window
 cliff, no matter how long you take to reply. Reclaim the terminal any
 time by pressing **Esc** — it cancels the listening hook instantly
 (verified against a live session) and typing a prompt then returns
@@ -156,6 +156,14 @@ do arrive with no window open (e.g. before the first browser turn)
 get an immediate "message queued — session is idle" note in the
 browser and a waiting-message hint in the idle terminal, and are
 delivered on the session's next activity.
+
+**Interactive choices work remotely too.** When the session asks a
+multiple-choice question (Claude Code's AskUserQuestion tool), the
+options appear as buttons in the browser (and as `/pick <n>` in
+`tui`); your click is returned to the session as the answer — the
+terminal selector never blocks a remotely-driven session. (Mechanism:
+a PreToolUse hook relays the question and returns the viewer's answer
+as the tool decision — verified against a live session.)
 
 Nothing is spawned anywhere in this path: no `claude` subprocess, no
 PTY, no tmux. The bridge only reads a file the session already writes

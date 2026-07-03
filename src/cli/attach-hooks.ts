@@ -38,15 +38,20 @@ import {
   attachDirFor,
   bridgeAlive,
   browserTurnMarkerExists,
+  clearAnswer,
   clearBrowserTurnMarker,
+  clearQuestion,
   drainQueue,
   endMarkerExists,
   queueNonEmpty,
+  readAnswer,
   readAttachedCount,
   touchBrowserTurnMarker,
   touchEndMarker,
   touchStopMarker,
+  writeQuestion,
 } from '../attach/state.ts';
+import { QuestionAnswer, QuestionItem } from '../session/ws-protocol.ts';
 import { OPENRC_MARKER } from '../transcript/translate.ts';
 
 /** Default post-turn listening window while viewers are attached. */
@@ -77,6 +82,8 @@ const HookInput = z.looseObject({
   transcript_path: z.string().optional(),
   stop_hook_active: z.boolean().optional(),
   prompt: z.string().optional(),
+  tool_name: z.string().optional(),
+  tool_input: z.unknown().optional(),
 });
 export type HookInput = z.infer<typeof HookInput>;
 
@@ -193,6 +200,67 @@ export async function runPromptHook(
   };
 }
 
+/** Shape of AskUserQuestion's tool_input, parsed defensively. */
+const AskToolInput = z.looseObject({ questions: z.array(QuestionItem) });
+
+/** Render viewer answers as the deny reason Claude reads as the answer. */
+export function formatAnswerReason(answers: readonly unknown[]): string {
+  const parsed = z.array(QuestionAnswer).safeParse(answers);
+  const lines = parsed.success
+    ? parsed.data.map((a) => `- ${a.header ?? a.question ?? 'answer'}: ${a.labels.join(', ')}`)
+    : [`- ${JSON.stringify(answers)}`];
+  return `${OPENRC_MARKER} The user answered this question from the shared open-rc view (browser/tui). These ARE the user's answers — accept them and continue; do NOT ask again:\n\n${lines.join('\n')}`;
+}
+
+/**
+ * PreToolUse hook for AskUserQuestion. In browser-driven mode the
+ * terminal is unattended, so its native selector would block the
+ * session forever. Instead: park the question for the bridge (which
+ * relays it to every viewer as a `question` frame), wait for a
+ * viewer's answer, and return it as a deny reason — empirically
+ * verified (2026-07-03) to reach Claude as the answer, with no
+ * terminal selector shown. Esc cancels the wait like any hook, which
+ * falls back to the native selector on Claude's next attempt.
+ * In CLI-driven mode: no opinion, the native selector runs.
+ */
+export async function runAskHook(
+  input: HookInput,
+  opts?: { readonly baseDir?: string },
+): Promise<HookResult> {
+  const dir = attachDirFor(input.session_id, opts?.baseDir);
+  if (!(await bridgeAlive(dir))) return {};
+  if (!(await browserTurnMarkerExists(dir))) return {};
+
+  const parsed = AskToolInput.safeParse(input.tool_input);
+  if (!parsed.success || parsed.data.questions.length === 0) return {};
+
+  const requestId = crypto.randomUUID();
+  await writeQuestion(dir, { requestId, questions: parsed.data.questions });
+
+  try {
+    for (;;) {
+      const answers = await readAnswer(dir, requestId);
+      if (answers !== null) {
+        await clearAnswer(dir, requestId);
+        return {
+          output: {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason: formatAnswerReason(answers),
+            },
+          },
+        };
+      }
+      if (await endMarkerExists(dir)) return {};
+      if (!(await bridgeAlive(dir))) return {};
+      await sleep(LINGER_POLL_MS);
+    }
+  } finally {
+    await clearQuestion(dir);
+  }
+}
+
 /**
  * Notification hook (fires when Claude Code is waiting for input,
  * ~60 s idle). If browser prompts are stuck in the queue, tell the
@@ -240,12 +308,14 @@ export async function runHookCommand(event: string, stdinText: string): Promise<
         ? await runPromptHook(input)
         : event === 'notify'
           ? await runNotifyHook(input)
-          : event === 'end'
-            ? await runEndHook(input)
-            : null;
+          : event === 'ask'
+            ? await runAskHook(input)
+            : event === 'end'
+              ? await runEndHook(input)
+              : null;
 
   if (result === null) {
-    console.error(`unknown hook event: ${event} (expected stop|prompt|notify|end)`);
+    console.error(`unknown hook event: ${event} (expected stop|prompt|notify|ask|end)`);
     return 2;
   }
   if (result.output) {

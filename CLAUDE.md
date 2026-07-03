@@ -72,9 +72,11 @@ rebuilds the same UX against any provider by relaying the public
   the `open-rc hook stop|prompt|end` handlers (installed into
   `~/.claude/settings.json` by `make setup`) drain that queue — Stop
   blocks with the messages as reason (delivery at turn ends, with an
-  ADAPTIVE linger window while viewers are attached: 45 s normally
-  (`ORC_STOP_LINGER_MS`), UNLIMITED while the conversation is
-  browser-driven (`ORC_STOP_LINGER_ACTIVE_MS` caps it if set; tracked
+  ADAPTIVE linger window: 45 s normally (`ORC_STOP_LINGER_MS`),
+  UNLIMITED while the conversation is browser-driven — and a viewer
+  ATTACHING flips browser-driven mode on immediately (the bridge
+  touches the marker on `attached count>0`), so even the FIRST remote
+  message has no window to miss (`ORC_STOP_LINGER_ACTIVE_MS` caps it if set; tracked
   via `browser-turn.marker`; 5 min then 30 min both proved to be
   cliffs — went unlimited 2026-07-03, no env cap. Esc hands the
   prompt back to the terminal instantly; the next real CLI prompt
@@ -234,8 +236,10 @@ Two boundaries: browser ↔ `open-rc serve` on `/ws`, and bridge ↔
   `send`, so every attached view renders the same prompt — this is
   what keeps a shared session in sync), plus whatever per-client
   frames the user's bridge sends (text / text_delta / thinking /
-  tool_use / tool_result / permission_request / done / error, tagged
-  with the clientId they came from). `text_delta` is a streaming
+  tool_use / tool_result / permission_request / question / done /
+  error, tagged with the clientId they came from; `question` is an
+  AskUserQuestion relayed for remote answering, transient like
+  `permission_request` — never replayed from history). `text_delta` is a streaming
   fragment of the in-progress reply — a bridge that has a token stream
   can send these (e.g. from `claude --include-partial-messages`) and
   the browser renders them live with a typing indicator while waiting;
@@ -249,7 +253,11 @@ Two boundaries: browser ↔ `open-rc serve` on `/ws`, and bridge ↔
   itself and must NOT be re-sent by the bridge — attach-orc filters
   them by the `[open-rc]` marker), `status`, and `unregister`.
 - **Server → Bridge (`/agent`).** `prompt` (a browser/tui `send`),
-  `permission_response`, `attached { count }` — how many viewers are
+  `permission_response`, `question_response { requestId, answers }`
+  (a viewer's answer to a relayed AskUserQuestion — the `ask`
+  PreToolUse hook waits on it and returns it as the tool decision,
+  which Claude accepts as the answer; verified empirically
+  2026-07-03), `attached { count }` — how many viewers are
   watching, sent on every attach/detach so the Stop-hook linger runs
   only while someone is attached — and `ping` every 30 s (keepalive:
   proxies like Cloudflare drop idle WebSockets at ~100 s, and the

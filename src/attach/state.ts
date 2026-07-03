@@ -70,8 +70,17 @@ export async function createAttachDir(dir: string): Promise<void> {
     stopPath(dir),
     endPath(dir),
     browserTurnPath(dir),
+    questionPath(dir),
   ]) {
     await unlink(p).catch(() => {});
+  }
+  // Stale answers from a previous bridge are meaningless too.
+  try {
+    for (const name of await readdir(dir)) {
+      if (name.startsWith('answer-')) await unlink(join(dir, name)).catch(() => {});
+    }
+  } catch {
+    // fresh dir
   }
 }
 
@@ -215,6 +224,66 @@ export const touchStopMarker = (dir: string) => touchMarker(stopPath(dir));
 export const stopMarkerMtime = (dir: string) => markerMtime(stopPath(dir));
 export const touchEndMarker = (dir: string) => touchMarker(endPath(dir));
 export const endMarkerExists = async (dir: string) => (await markerMtime(endPath(dir))) !== null;
+
+/* ----------------------------- question / answer -------------------------- */
+
+const questionPath = (dir: string) => join(dir, 'question.json');
+const answerPath = (dir: string, requestId: string) =>
+  join(dir, `answer-${requestId.replace(/[^a-zA-Z0-9-]/g, '_')}.json`);
+
+const PendingQuestion = z.object({
+  requestId: z.string(),
+  questions: z.array(z.unknown()),
+  ts: z.number(),
+});
+export type PendingQuestion = z.infer<typeof PendingQuestion>;
+
+/** The `ask` hook parks the live AskUserQuestion here; the bridge
+ *  relays it to viewers as a `question` frame. */
+export async function writeQuestion(
+  dir: string,
+  q: { requestId: string; questions: unknown[] },
+): Promise<void> {
+  await writeFile(questionPath(dir), JSON.stringify({ ...q, ts: Date.now() }));
+}
+
+export async function readQuestion(dir: string): Promise<PendingQuestion | null> {
+  try {
+    const raw = await readFile(questionPath(dir), 'utf8');
+    const parsed = PendingQuestion.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export const clearQuestion = async (dir: string) => {
+  await unlink(questionPath(dir)).catch(() => {});
+};
+
+/** The bridge parks a viewer's `question_response` here; the waiting
+ *  `ask` hook consumes it as the answer. */
+export async function writeAnswer(
+  dir: string,
+  requestId: string,
+  answers: unknown[],
+): Promise<void> {
+  await writeFile(answerPath(dir, requestId), JSON.stringify({ answers }));
+}
+
+export async function readAnswer(dir: string, requestId: string): Promise<unknown[] | null> {
+  try {
+    const raw = await readFile(answerPath(dir, requestId), 'utf8');
+    const parsed = JSON.parse(raw) as { answers?: unknown[] };
+    return Array.isArray(parsed.answers) ? parsed.answers : null;
+  } catch {
+    return null;
+  }
+}
+
+export const clearAnswer = async (dir: string, requestId: string) => {
+  await unlink(answerPath(dir, requestId)).catch(() => {});
+};
 
 /* ----------------------------- browser-turn marker ------------------------ */
 

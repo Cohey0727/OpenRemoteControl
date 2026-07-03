@@ -15,7 +15,7 @@
  *               `/agent` and queues browser prompts for the Claude
  *               Code hooks to deliver. Started in the background by
  *               the `/orc` slash command.
- *   hook        Claude Code hook handlers (stop|prompt|notify|end) —
+ *   hook        Claude Code hook handlers (stop|prompt|notify|ask|end) —
  *               the queue-delivery half of attach-orc. Wired into
  *               `~/.claude/settings.json` by `make setup`.
  *

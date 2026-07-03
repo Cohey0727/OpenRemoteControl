@@ -19,11 +19,14 @@ import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   attachDirFor,
+  browserTurnMarkerExists,
   drainQueue,
   queueNonEmpty,
+  readAnswer,
   readAttachedCount,
   touchEndMarker,
   touchStopMarker,
+  writeQuestion,
 } from '../src/attach/state.ts';
 import { type AttachOrcHandle, runAttachOrc } from '../src/cli/attach-orc.ts';
 import { serve } from '../src/serve.ts';
@@ -159,6 +162,9 @@ describe('attach-orc bridge', () => {
 
     const dir = attachDirFor(SESSION_ID, ATTACH_BASE);
     await until(async () => (await readAttachedCount(dir)) >= 1);
+    // Attaching flips the session into remote-listening mode so even
+    // the FIRST browser message has an unlimited delivery window.
+    await until(() => browserTurnMarkerExists(dir));
     browser.close();
   });
 
@@ -225,6 +231,49 @@ describe('attach-orc bridge', () => {
     await touchEndMarker(attachDirFor(SESSION_ID, ATTACH_BASE));
     await browser.waitFor((m) => m.type === 'client_removed' && m.clientId === SESSION_ID, 6_000);
     browser.close();
+  });
+});
+
+describe('question relay', () => {
+  test('a parked question reaches viewers; their answer lands in the answer file', async () => {
+    // Own bridge: the shared fixture bridge is already gone (the
+    // SessionEnd test above shut it down and removed its attach dir).
+    const TQ = join(TRANSCRIPT_DIR, 'sess-question.jsonl');
+    await writeFile(TQ, entry.user('q?') + entry.assistantText('a.'));
+    const qBase = join(ROOT, 'attach-question');
+    const bq = await runAttachOrc(
+      { server: AGENT, label: 'q', cwd: CWD, transcript: TQ },
+      { attachBaseDir: qBase, claudeHome: CLAUDE_HOME, log: () => {} },
+    );
+    const dir = attachDirFor('sess-question', qBase);
+    const browser = await open(WS);
+    browser.send({ type: 'attach', clientId: 'sess-question' });
+    await browser.waitFor((m) => m.type === 'text');
+
+    await writeQuestion(dir, {
+      requestId: 'q-e2e-1',
+      questions: [{ question: 'Pick one', options: [{ label: 'A' }, { label: 'B' }] }],
+    });
+    const q = await browser.waitFor((m) => m.type === 'question');
+    expect(q.requestId).toBe('q-e2e-1');
+
+    browser.send({
+      type: 'question_response',
+      clientId: 'sess-question',
+      requestId: 'q-e2e-1',
+      answers: [{ question: 'Pick one', labels: ['B'] }],
+    });
+    await until(async () => (await readAnswer(dir, 'q-e2e-1')) !== null);
+    expect(await readAnswer(dir, 'q-e2e-1')).toEqual([{ question: 'Pick one', labels: ['B'] }]);
+
+    // Transient: a viewer attaching later must NOT get the question replayed.
+    const late = await open(WS);
+    late.send({ type: 'attach', clientId: 'sess-question' });
+    await late.waitFor((m) => m.type === 'text');
+    expect(late.msgs.some((m) => m.type === 'question')).toBe(false);
+    late.close();
+    browser.close();
+    await bq.stop();
   });
 });
 

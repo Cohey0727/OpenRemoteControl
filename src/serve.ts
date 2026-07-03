@@ -25,10 +25,10 @@
 import { join, relative, resolve, sep } from 'node:path';
 import type { ServerWebSocket } from 'bun';
 import { writeAudit } from './permission/audit.ts';
-import { computeShellRev } from './serve/shell-rev.ts';
 import { notify } from './push/notifier.ts';
 import { PushStore } from './push/store.ts';
 import { configureWebPush, loadOrCreateVapidKeys } from './push/vapid.ts';
+import { computeShellRev } from './serve/shell-rev.ts';
 import type { BridgeConn, ClientInfo, ClientStatus } from './session/ws-protocol.ts';
 import { type WsData, makeWsHandlers } from './ws.ts';
 

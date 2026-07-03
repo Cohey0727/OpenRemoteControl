@@ -85,6 +85,15 @@ export async function runTui(flags: TuiFlags): Promise<void> {
   let attached: string | null = flags.clientId ?? null;
   let clients: ClientInfo[] = [];
   let pendingRequestId: string | null = null;
+  /** Live AskUserQuestion relayed from the session, if any. */
+  let pendingQuestion: {
+    requestId: string;
+    questions: Array<{
+      question: string;
+      header?: string;
+      options: Array<{ label: string; description?: string }>;
+    }>;
+  } | null = null;
   let stop = false;
   const reconnectDelays = [500, 1000, 2000, 3000, 5000];
   let reconnectAttempt = 0;
@@ -177,6 +186,22 @@ export async function runTui(flags: TuiFlags): Promise<void> {
       case 'tool_result':
         render(`${C.dim}  ⏴ ${truncate(msg.output as string, 120)}${C.off}`);
         return;
+      case 'question': {
+        pendingQuestion = msg as unknown as typeof pendingQuestion;
+        const qs = pendingQuestion?.questions ?? [];
+        for (const q of qs) {
+          render(`${C.amber}${C.bold}? ${q.header ?? 'question'}${C.off} ${q.question}`);
+          q.options.forEach((o, i) => {
+            render(
+              `  ${C.cyan}${i + 1}${C.off} ${o.label}${o.description ? ` ${C.dim}${o.description}${C.off}` : ''}`,
+            );
+          });
+        }
+        render(
+          `  ${C.dim}reply${C.off} ${C.green}/pick <number>${C.off} ${C.dim}(first question)${C.off}`,
+        );
+        return;
+      }
       case 'permission_request': {
         pendingRequestId = msg.requestId as string;
         render(
@@ -263,7 +288,7 @@ export async function runTui(flags: TuiFlags): Promise<void> {
       switch (cmd) {
         case 'help':
           render(
-            `${C.dim}commands:${C.off} /allow  /deny  /clients  /attach <clientId>  /quit${C.off}\n` +
+            `${C.dim}commands:${C.off} /allow  /deny  /pick <n>  /clients  /attach <clientId>  /quit${C.off}\n` +
               `${C.dim}anything else is sent as a prompt to the shared session.${C.off}`,
           );
           break;
@@ -284,6 +309,30 @@ export async function runTui(flags: TuiFlags): Promise<void> {
             pendingRequestId = null;
           }
           break;
+        case 'pick': {
+          const first = pendingQuestion?.questions[0];
+          const idx = Number.parseInt(arg, 10) - 1;
+          const opt = first?.options[idx];
+          if (!pendingQuestion || !first || !opt) {
+            render(`${C.dim}nothing to pick (or bad number) — usage: /pick <n>${C.off}`);
+            break;
+          }
+          sendJson({
+            type: 'question_response',
+            clientId: attached,
+            requestId: pendingQuestion.requestId,
+            answers: [
+              {
+                question: first.question,
+                ...(first.header !== undefined ? { header: first.header } : {}),
+                labels: [opt.label],
+              },
+            ],
+          });
+          render(`${C.green}answered${C.off} ${opt.label}`);
+          pendingQuestion = null;
+          break;
+        }
         case 'clients':
           if (clients.length === 0) render(`${C.dim}no sessions${C.off}`);
           for (const c of clients) {
