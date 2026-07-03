@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["dist/", "node_modules/", "captures/", ".open-rc/", "ui/vendor/"]
+    "ignore": [
+      "dist/",
+      "node_modules/",
+      "captures/",
+      ".open-rc/",
+      "ui/vendor/",
+      "vps/",
+      "tests/.tmp-*"
+    ]
   },
   "formatter": {
     "enabled": true,
