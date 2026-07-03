@@ -239,6 +239,13 @@ export async function runAttachOrc(
 
   await createAttachDir(dir);
   await writeBridgeInfo(dir, { clientId, server: flags.server, startedAt: Date.now() });
+  // Running /orc IS the remote-control intent: enter browser-driven
+  // (unlimited listening) mode immediately, so the very first turn end
+  // after sharing starts an open-ended window — a viewer who attaches
+  // minutes later still gets instant delivery. The first prompt typed
+  // in the terminal clears it (UserPromptSubmit), restoring short
+  // windows for attended terminals.
+  await touchBrowserTurnMarker(dir);
 
   let ws: WebSocket | null = null;
   let tail: TailHandle | null = null;
@@ -294,6 +301,7 @@ export async function runAttachOrc(
       fromOffset: offset,
       onLine: (line) => {
         justReplayed = false;
+        if (line.includes('"stop_hook_summary"')) verifyHooksRan();
         const step = foldLine(turn, line);
         turn = step.state;
         emit(step.out);
@@ -307,6 +315,28 @@ export async function runAttachOrc(
   /** Close a turn the transcript will never close for us: right after
    *  a replay (short fuse), or when a live turn goes silent for a long
    *  time (e.g. Esc-interrupted — the Stop hook never fires). */
+  /** Fires when the transcript logs a finished Stop-hook pass; if our
+   *  stop marker didn't move, this session isn't running the open-rc
+   *  hooks (started before `make setup`, or they were removed) —
+   *  browser→session delivery cannot work. Say so, once. */
+  let hookWarningSent = false;
+  const verifyHooksRan = (): void => {
+    if (hookWarningSent || stopped) return;
+    setTimeout(() => {
+      void (async () => {
+        if (hookWarningSent || stopped) return;
+        const m = await stopMarkerMtime(dir);
+        if (m !== null && Date.now() - m < 15_000) return; // our hook ran
+        hookWarningSent = true;
+        send({
+          type: 'error',
+          message:
+            'this session does not appear to run the open-rc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
+        });
+      })();
+    }, 5_000);
+  };
+
   const closeStuckTurn = (): void => {
     if (!turn.turnOpen) return;
     const threshold = justReplayed ? (opts.quietTurnMs ?? QUIET_TURN_MS) : STUCK_TURN_MS;

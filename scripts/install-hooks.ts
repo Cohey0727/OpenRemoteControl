@@ -28,10 +28,15 @@ import { parseFlags } from '../src/cli/flags.ts';
 /** Marker every open-rc-managed hook command contains. */
 const HOOK_MARKER = 'open-rc hook';
 
-/** Outer bound for the Stop hook. The browser-driven listening window
- *  is unlimited by design (`open-rc release` reclaims the prompt), so
- *  this is a 30-day backstop, not a feature knob. */
-const STOP_TIMEOUT_S = 2_592_000;
+/** Outer bound for the Stop/ask hooks. The browser-driven listening
+ *  window is unlimited by design, so this is a backstop, not a
+ *  feature knob. MUST stay ≤ 2_147_483 s: Claude Code multiplies the
+ *  per-hook timeout into 32-bit milliseconds, and an overflowing
+ *  value (we shipped 2 592 000 s = 30 d) makes it abandon the hook
+ *  INSTANTLY — the linger became a zombie and every delivery silently
+ *  died (diagnosed empirically 2026-07-03). 7 days is far below the
+ *  cap and far above any real listening need. */
+const STOP_TIMEOUT_S = 604_800;
 
 interface HookCommand {
   type: 'command';

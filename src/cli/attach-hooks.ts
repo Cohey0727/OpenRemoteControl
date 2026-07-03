@@ -115,6 +115,15 @@ export const activeLingerMs = () => DEFAULT_ACTIVE_LINGER_MS;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Optional forensic trace: set ORC_HOOK_DEBUG=/path to append one
+ *  JSON line per hook decision (used to diagnose silent exits). */
+async function hookDebug(record: Record<string, unknown>): Promise<void> {
+  const path = process.env.ORC_HOOK_DEBUG;
+  if (!path) return;
+  const { appendFile } = await import('node:fs/promises');
+  await appendFile(path, `${JSON.stringify({ t: Date.now(), ...record })}\n`).catch(() => {});
+}
+
 /** Format drained browser prompts as a Stop-hook block reason. */
 export function formatBlockReason(texts: readonly string[]): string {
   const list = texts.map((t) => `- ${t}`).join('\n');
@@ -140,7 +149,10 @@ export async function runStopHook(
   },
 ): Promise<HookResult> {
   const dir = attachDirFor(input.session_id, opts?.baseDir);
-  if (!(await bridgeAlive(dir))) return {};
+  if (!(await bridgeAlive(dir))) {
+    await hookDebug({ hook: 'stop', exit: 'bridge-dead-at-start' });
+    return {};
+  }
 
   // Turn ended — let the bridge close the turn for attached viewers.
   await touchStopMarker(dir);
@@ -160,17 +172,30 @@ export async function runStopHook(
     if (texts.length > 0) {
       // The next turn is browser-driven; keep listening after it too.
       await touchBrowserTurnMarker(dir);
+      await hookDebug({ hook: 'stop', exit: 'delivered', n: texts.length });
       return { output: { decision: 'block', reason: formatBlockReason(texts) } };
     }
-    if (await endMarkerExists(dir)) return {};
-    if (!(await bridgeAlive(dir))) return {};
+    if (await endMarkerExists(dir)) {
+      await hookDebug({ hook: 'stop', exit: 'end-marker' });
+      return {};
+    }
+    if (!(await bridgeAlive(dir))) {
+      await hookDebug({ hook: 'stop', exit: 'bridge-dead' });
+      return {};
+    }
     // In normal (CLI-driven) mode, linger only while someone is
     // actually watching. In browser-driven mode, keep listening even
     // at zero viewers: a phone locking its screen drops the WebSocket
     // (and the attached count) between every reply — the remote user
     // is still mid-conversation.
-    if (!browserDriven && (await readAttachedCount(dir)) === 0) return {};
-    if (Date.now() >= deadline) return {};
+    if (!browserDriven && (await readAttachedCount(dir)) === 0) {
+      await hookDebug({ hook: 'stop', exit: 'no-viewers', browserDriven });
+      return {};
+    }
+    if (Date.now() >= deadline) {
+      await hookDebug({ hook: 'stop', exit: 'deadline', window });
+      return {};
+    }
     await sleep(LINGER_POLL_MS);
   }
 }
