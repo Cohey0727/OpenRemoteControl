@@ -148,9 +148,12 @@ export async function runStopHook(
     }
     if (await endMarkerExists(dir)) return {};
     if (!(await bridgeAlive(dir))) return {};
-    // Linger only while someone is actually watching; an unwatched
-    // session should return to the prompt immediately.
-    if ((await readAttachedCount(dir)) === 0) return {};
+    // In normal mode, linger only while someone is actually watching.
+    // In browser-driven mode, keep the full window even at zero
+    // viewers: a phone locking its screen drops the WebSocket (and
+    // the attached count) between every reply — the remote user is
+    // still mid-conversation. Esc in the terminal reclaims the prompt.
+    if (!browserDriven && (await readAttachedCount(dir)) === 0) return {};
     if (Date.now() >= deadline) return {};
     await sleep(LINGER_POLL_MS);
   }

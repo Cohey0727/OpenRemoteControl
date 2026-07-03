@@ -227,3 +227,31 @@ describe('attach-orc bridge', () => {
     browser.close();
   });
 });
+
+describe('stuck-turn guard', () => {
+  test('a replay that ends mid-turn with a fresh transcript still closes the turn', async () => {
+    // Regression (2026-07-03): bookkeeping writes kept the transcript
+    // mtime fresh, the old mtime-based check skipped the trailing
+    // `done`, and the turn stayed open forever — suppressing the idle
+    // notice and pinning the sidebar to busy.
+    const T2 = join(TRANSCRIPT_DIR, 'sess-midturn.jsonl');
+    await writeFile(T2, entry.user('question') + entry.assistantText('mid-turn answer'));
+    const b2 = await runAttachOrc(
+      { server: AGENT, label: 'midturn', cwd: CWD, transcript: T2 },
+      {
+        attachBaseDir: join(ROOT, 'attach-midturn'),
+        claudeHome: CLAUDE_HOME,
+        log: () => {},
+        quietTurnMs: 600,
+      },
+    );
+
+    const browser = await open(WS);
+    browser.send({ type: 'attach', clientId: 'sess-midturn' });
+    await browser.waitFor((m) => m.type === 'text' && m.text === 'mid-turn answer');
+    // The trailing turn closes within the quiet fuse (600 ms + poll).
+    await until(async () => browser.msgs.some((m) => m.type === 'done'), 5_000);
+    browser.close();
+    await b2.stop();
+  });
+});

@@ -121,6 +121,22 @@ describe('runStopHook', () => {
     expect(second.output?.reason as string).toContain('follow-up from browser');
   });
 
+  test('browser-driven mode survives zero viewers (phone lock drops the WS)', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await touchBrowserTurnMarker(dir);
+    await writeAttachedCount(dir, 0); // screen locked — viewer gone
+    setTimeout(() => {
+      void appendQueue(dir, 'sent after unlocking the phone');
+    }, 400);
+
+    const result = await runStopHook(
+      { session_id: sessionId },
+      { baseDir: base, lingerMs: 100, activeLingerMs: 5_000 },
+    );
+    expect(result.output?.decision).toBe('block');
+    expect(result.output?.reason as string).toContain('sent after unlocking the phone');
+  });
+
   test('a CLI prompt clears browser-driven mode', async () => {
     const { sessionId, dir } = await liveBridgeSession();
     await touchBrowserTurnMarker(dir);

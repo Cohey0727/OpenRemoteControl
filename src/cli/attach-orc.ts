@@ -35,7 +35,6 @@
  *      `attached` counts to the hooks; exit on the SessionEnd marker.
  */
 
-import { stat } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import {
@@ -60,8 +59,16 @@ import { parseFlags } from './flags.ts';
 const MAX_REPLAY_FRAMES = 600;
 /** First-registration fail-fast window. */
 const REGISTER_TIMEOUT_MS = 10_000;
-/** A transcript quiet for this long is treated as between turns. */
+/** After a (re)replay, this much tail silence closes the trailing
+ *  turn — a reconnect must not leave `turnOpen` stuck (it suppresses
+ *  the idle notice and pins the sidebar to busy). */
 const QUIET_TURN_MS = 15_000;
+/** Rolling stuck-turn guard during normal streaming: a turn open
+ *  this long with zero emitted frames is presumed abandoned (e.g. an
+ *  Esc-interrupted turn never fires the Stop hook). Long silent tool
+ *  runs can trip this early — the cost is a cosmetic turn divider;
+ *  frames reopen the turn when they resume. */
+const STUCK_TURN_MS = 300_000;
 /** Grace between the Stop marker and the `done` frame, so the last
  *  transcript lines (flushed around the same moment) relay first. */
 const DONE_GRACE_MS = 700;
@@ -208,6 +215,8 @@ export interface AttachOrcOptions {
   readonly claudeHome?: string;
   /** Called after a SessionEnd-triggered shutdown completes. */
   readonly onExit?: () => void;
+  /** Post-replay quiet-close fuse override (tests). */
+  readonly quietTurnMs?: number;
 }
 
 export async function runAttachOrc(
@@ -250,8 +259,14 @@ export async function runAttachOrc(
     }
   };
 
+  /** Last time conversation frames flowed (feeds the stuck-turn guard). */
+  let lastEmitAt = Date.now();
+  /** True from the end of a replay until the first live tail line. */
+  let justReplayed = false;
+
   const emit = (frames: readonly OutFrame[]): void => {
     for (const frame of frames) send(frame);
+    if (frames.length > 0) lastEmitAt = Date.now();
   };
 
   /** Replay history and start (or restart) the live tail. */
@@ -261,20 +276,19 @@ export async function runAttachOrc(
     const folded = foldLines(lines);
     turn = folded.state;
     emit(folded.out.slice(-MAX_REPLAY_FRAMES));
-
-    // If the transcript has been quiet, the session is between turns —
-    // close the trailing turn so viewers see it as complete.
-    if (turn.turnOpen) {
-      const s = await stat(located.path).catch(() => null);
-      if (s && Date.now() - s.mtimeMs > QUIET_TURN_MS) {
-        emit([{ type: 'done', ...(turn.lastTs !== null ? { ts: turn.lastTs } : {}) }]);
-        turn = { ...turn, turnOpen: false };
-      }
-    }
+    // A replay that ends mid-turn is closed by the stuck-turn guard
+    // (markerPoll → closeStuckTurn) after QUIET_TURN_MS of tail
+    // silence — NOT by a one-shot mtime check here: bookkeeping
+    // writes (e.g. Claude Code's stop_hook_summary entries) keep the
+    // mtime fresh while the session is actually idle, and skipping on
+    // fresh mtime left the turn open forever (observed 2026-07-03).
+    justReplayed = true;
+    lastEmitAt = Date.now();
 
     tail = tailFile(located.path, {
       fromOffset: offset,
       onLine: (line) => {
+        justReplayed = false;
         const step = foldLine(turn, line);
         turn = step.state;
         emit(step.out);
@@ -283,6 +297,17 @@ export async function runAttachOrc(
         // transcript briefly unreadable (writer mid-rename); next poll retries
       },
     });
+  };
+
+  /** Close a turn the transcript will never close for us: right after
+   *  a replay (short fuse), or when a live turn goes silent for a long
+   *  time (e.g. Esc-interrupted — the Stop hook never fires). */
+  const closeStuckTurn = (): void => {
+    if (!turn.turnOpen) return;
+    const threshold = justReplayed ? (opts.quietTurnMs ?? QUIET_TURN_MS) : STUCK_TURN_MS;
+    if (Date.now() - lastEmitAt < threshold) return;
+    emit([{ type: 'done', ...(turn.lastTs !== null ? { ts: turn.lastTs } : {}) }]);
+    turn = { ...turn, turnOpen: false };
   };
 
   /**
@@ -361,6 +386,7 @@ export async function runAttachOrc(
         lastStopMtime = mtime;
         closeTurnFromStopMarker();
       }
+      closeStuckTurn();
     })();
   }, MARKER_POLL_MS);
 
