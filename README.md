@@ -1,7 +1,8 @@
-# open-rc
+# Open Remote Control
 
 > Claude Code's RemoteControl control plane — open, self-hostable, and
-> usable against any Claude Code-compatible LLM provider.
+> usable against any Claude Code-compatible LLM provider. `open-rc`
+> on the command line.
 
 [![Status: Server-only relay](https://img.shields.io/badge/status-server%20only%20relay-yellow)](#status)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -9,7 +10,7 @@
 
 ---
 
-## What is open-rc?
+## What is Open Remote Control?
 
 Claude Code's RemoteControl (driving a session from the web UI or
 mobile app, peer-to-peer `SendUserMessage` across machines, push

@@ -1,4 +1,4 @@
-# open-rc — Roadmap
+# Open Remote Control — Roadmap
 
 > **Last revised:** 2026-07-02. The server is a pure WebSocket relay:
 > it runs no processes, walks no process table, takes over nothing.

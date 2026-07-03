@@ -1,4 +1,4 @@
-# open-rc — Survey of comparable projects
+# Open Remote Control — Survey of comparable projects
 
 > **Date:** 2026-06-29
 > **Purpose:** Before committing to a design, survey close analogues on GitHub to

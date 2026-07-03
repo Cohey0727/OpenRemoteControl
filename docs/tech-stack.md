@@ -1,4 +1,4 @@
-# Tech Stack
+# Open Remote Control — Tech Stack
 
 > Concrete picks for `open-rc`. Each section names the choice, the reason,
 > and the realistic alternatives we considered.

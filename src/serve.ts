@@ -299,7 +299,7 @@ export async function serve(opts: ServeOptions): Promise<{
     onClientDone: (clientId: string, summary: string) => {
       if (!pushStore) return;
       void notify(pushStore, {
-        title: 'open-rc',
+        title: 'Open Remote Control',
         body: summary,
         url: '/',
         sessionId: clientId,

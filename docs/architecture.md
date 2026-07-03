@@ -1,4 +1,4 @@
-# open-rc — Architecture
+# Open Remote Control — Architecture
 
 > **Status:** design draft for Phase 7 (pure-relay pivot). The model is
 > frozen: `open-rc serve` is a pure WebSocket relay. It starts no

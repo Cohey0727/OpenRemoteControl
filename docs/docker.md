@@ -1,4 +1,4 @@
-# Running open-rc with Docker
+# Running Open Remote Control with Docker
 
 One image contains the whole CLI. `serve` — the relay + SPA — is the
 default command, so "start the server" is one line. The container is

@@ -1,4 +1,4 @@
-# Deploying the open-rc relay
+# Deploying the Open Remote Control relay
 
 How to run `open-rc serve` on the common platforms — a generic VPS,
 AWS ECS (Fargate), Google Cloud Run, and friends. The repo carries no
