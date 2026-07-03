@@ -73,18 +73,24 @@ rebuilds the same UX against any provider by relaying the public
   `~/.claude/settings.json` by `make setup`) drain that queue — Stop
   blocks with the messages as reason (delivery at turn ends, with an
   ADAPTIVE linger window while viewers are attached: 45 s normally
-  (`ORC_STOP_LINGER_MS`), 300 s while the conversation is
+  (`ORC_STOP_LINGER_MS`), 30 min while the conversation is
   browser-driven (`ORC_STOP_LINGER_ACTIVE_MS`, tracked via
-  `browser-turn.marker`; a real CLI prompt clears it so terminal
-  input never waits long — typing during a running Stop hook QUEUES
-  until the hook exits, which is why the short window must stay
-  short). UserPromptSubmit attaches queued messages as context,
-  SessionEnd tells the bridge to exit. Known, accepted limitation: a
-  browser message sent while the session is idle past its window
-  waits for the next session activity — there is no way to wake an
-  idle interactive `claude` without PTY/tmux/spawn, and those stay
-  banned (the Notification/idle hook cannot inject; verified against
-  docs 2026-07-03).
+  `browser-turn.marker`; 5 min proved too short for real phone reply
+  gaps — 2026-07-03. A real CLI prompt clears the marker so terminal
+  input never waits long; typing during a running Stop hook QUEUES
+  until the hook exits, so Esc is the escape hatch and the SHORT
+  window must stay short). UserPromptSubmit attaches queued messages
+  as context, Notification (`hook notify`) shows "browser message
+  waiting" in an idle terminal, SessionEnd tells the bridge to exit.
+  Known, accepted limitation: a browser message sent while the
+  session is idle past its window waits for the next session
+  activity — there is no way to wake an idle interactive `claude`
+  without PTY/tmux/spawn, and those stay banned (the
+  Notification/idle hook cannot inject; verified against docs
+  2026-07-03). The bridge makes that state visible: a prompt queued
+  with no plausible listening window open gets an immediate `error`
+  frame back ("message queued — the session is idle…"), so viewers
+  are never left staring at silence.
 - **Sidebar of currently-connected clients.** 300 px sidebar on the
   left, always visible on desktop, slides in/out on mobile. Each row
   = one currently-open WebSocket to `open-rc serve` from a user's

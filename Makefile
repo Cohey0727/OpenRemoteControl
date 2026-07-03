@@ -142,7 +142,7 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR)
 	@printf '%s\n' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
-	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / SessionEnd)$(OFF)' \
+	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / Notification / SessionEnd)$(OFF)' \
 	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/attach-orc.md'
 	@printf '%s\n' \
 	  '' \

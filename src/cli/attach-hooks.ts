@@ -41,6 +41,7 @@ import {
   clearBrowserTurnMarker,
   drainQueue,
   endMarkerExists,
+  queueNonEmpty,
   readAttachedCount,
   touchBrowserTurnMarker,
   touchEndMarker,
@@ -54,12 +55,14 @@ const DEFAULT_LINGER_MS = 45_000;
  * Long window used while the conversation is BROWSER-DRIVEN (the last
  * turn was injected from an attached view): the terminal is probably
  * unattended, so listening longer costs nobody anything and keeps a
- * phone-driven conversation continuously responsive. A prompt typed
- * in the terminal clears browser-driven mode, restoring the short
- * window so CLI prompts never wait long. Keep it under the Stop
- * hook's `timeout` in settings.json (installed as 630 s).
+ * phone-driven conversation responsive across real-world reply gaps
+ * (minutes, not seconds — 5 min proved too short in practice). A
+ * prompt typed in the terminal clears browser-driven mode, restoring
+ * the short window so CLI prompts never wait long; Esc interrupts a
+ * running hook if you need the prompt back mid-window. Keep it under
+ * the Stop hook's `timeout` in settings.json (installed as 1 860 s).
  */
-const DEFAULT_ACTIVE_LINGER_MS = 300_000;
+const DEFAULT_ACTIVE_LINGER_MS = 1_800_000;
 /** Queue poll cadence during the linger window. */
 const LINGER_POLL_MS = 300;
 
@@ -92,8 +95,8 @@ function envMs(name: string, fallback: number): number {
   return Number.isNaN(n) || n < 0 ? fallback : n;
 }
 
-const lingerMs = () => envMs('ORC_STOP_LINGER_MS', DEFAULT_LINGER_MS);
-const activeLingerMs = () => envMs('ORC_STOP_LINGER_ACTIVE_MS', DEFAULT_ACTIVE_LINGER_MS);
+export const lingerMs = () => envMs('ORC_STOP_LINGER_MS', DEFAULT_LINGER_MS);
+export const activeLingerMs = () => envMs('ORC_STOP_LINGER_ACTIVE_MS', DEFAULT_ACTIVE_LINGER_MS);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -178,6 +181,28 @@ export async function runPromptHook(
   };
 }
 
+/**
+ * Notification hook (fires when Claude Code is waiting for input,
+ * ~60 s idle). If browser prompts are stuck in the queue, tell the
+ * human at the terminal — they deliver them by simply typing
+ * anything. Output is display-only (Notification hooks cannot inject
+ * into the conversation), so this is a hint, not a delivery path.
+ */
+export async function runNotifyHook(
+  input: HookInput,
+  opts?: { readonly baseDir?: string },
+): Promise<HookResult> {
+  const dir = attachDirFor(input.session_id, opts?.baseDir);
+  if (!(await bridgeAlive(dir))) return {};
+  if (!(await queueNonEmpty(dir))) return {};
+  return {
+    output: {
+      systemMessage:
+        'open-rc: message(s) from the shared browser view are waiting — type anything (or press Enter) to deliver them.',
+    },
+  };
+}
+
 /** SessionEnd hook. Signals the bridge to unregister and exit. */
 export async function runEndHook(
   input: HookInput,
@@ -201,12 +226,14 @@ export async function runHookCommand(event: string, stdinText: string): Promise<
       ? await runStopHook(input)
       : event === 'prompt'
         ? await runPromptHook(input)
-        : event === 'end'
-          ? await runEndHook(input)
-          : null;
+        : event === 'notify'
+          ? await runNotifyHook(input)
+          : event === 'end'
+            ? await runEndHook(input)
+            : null;
 
   if (result === null) {
-    console.error(`unknown hook event: ${event} (expected stop|prompt|end)`);
+    console.error(`unknown hook event: ${event} (expected stop|prompt|notify|end)`);
     return 2;
   }
   if (result.output) {

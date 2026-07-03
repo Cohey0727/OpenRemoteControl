@@ -42,6 +42,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   appendQueue,
   attachDirFor,
+  browserTurnMarkerExists,
   createAttachDir,
   endMarkerExists,
   removeAttachDir,
@@ -52,6 +53,7 @@ import {
 import { resolveTranscript } from '../transcript/locate.ts';
 import { type TailHandle, readAllLines, tailFile } from '../transcript/tail.ts';
 import { type TranscriptFrame, entryTimestamp, translateEntry } from '../transcript/translate.ts';
+import { activeLingerMs, lingerMs } from './attach-hooks.ts';
 import { parseFlags } from './flags.ts';
 
 /** Frames replayed to the server after (re)registration, at most. */
@@ -283,6 +285,29 @@ export async function runAttachOrc(
     });
   };
 
+  /**
+   * A prompt was queued — if no Stop-hook listening window can still
+   * be open (the last turn ended longer ago than the applicable
+   * window) and no turn is running, nothing will deliver it until the
+   * session next wakes. Say so in the conversation instead of leaving
+   * the sender staring at silence. Best-effort and rate-limited.
+   */
+  let lastIdleNoticeAt = 0;
+  const notifyIfNoListener = async (): Promise<void> => {
+    if (turn.turnOpen) return; // a turn is running; delivery comes at its end
+    const stopM = await stopMarkerMtime(dir);
+    const windowMs = (await browserTurnMarkerExists(dir)) ? activeLingerMs() : lingerMs();
+    const listening = stopM !== null && Date.now() - stopM < windowMs - 5_000;
+    if (listening) return;
+    if (Date.now() - lastIdleNoticeAt < 30_000) return;
+    lastIdleNoticeAt = Date.now();
+    send({
+      type: 'error',
+      message:
+        'message queued — the session is idle right now; it will be delivered the next time the session wakes (its next turn, a prompt typed in its terminal, or the start of a new listening window).',
+    });
+  };
+
   const closeTurnFromStopMarker = (): void => {
     if (doneTimer) clearTimeout(doneTimer);
     // Small grace so transcript lines flushed around the same moment
@@ -381,9 +406,11 @@ export async function runAttachOrc(
       }
       case 'prompt': {
         if (typeof msg.text === 'string' && msg.text !== '') {
-          void appendQueue(dir, msg.text).catch((err) => {
-            log(`open-rc attach-orc: failed to queue prompt: ${err}`);
-          });
+          void appendQueue(dir, msg.text)
+            .then(() => notifyIfNoListener())
+            .catch((err) => {
+              log(`open-rc attach-orc: failed to queue prompt: ${err}`);
+            });
         }
         return;
       }

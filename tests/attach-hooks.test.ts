@@ -17,7 +17,13 @@ import {
   writeAttachedCount,
   writeBridgeInfo,
 } from '../src/attach/state.ts';
-import { parseHookInput, runEndHook, runPromptHook, runStopHook } from '../src/cli/attach-hooks.ts';
+import {
+  parseHookInput,
+  runEndHook,
+  runNotifyHook,
+  runPromptHook,
+  runStopHook,
+} from '../src/cli/attach-hooks.ts';
 import { OPENRC_MARKER } from '../src/transcript/translate.ts';
 
 const base = join(import.meta.dir, '.tmp-hooks');
@@ -152,5 +158,18 @@ describe('runEndHook', () => {
     const stray = crypto.randomUUID();
     await runEndHook({ session_id: stray }, { baseDir: base });
     expect(await endMarkerExists(attachDirFor(stray, base))).toBe(false);
+  });
+});
+
+describe('runNotifyHook', () => {
+  test('says a message is waiting only when one actually is', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    expect(
+      (await runNotifyHook({ session_id: sessionId }, { baseDir: base })).output,
+    ).toBeUndefined();
+
+    await appendQueue(dir, 'stuck message');
+    const result = await runNotifyHook({ session_id: sessionId }, { baseDir: base });
+    expect(result.output?.systemMessage as string).toContain('waiting');
   });
 });

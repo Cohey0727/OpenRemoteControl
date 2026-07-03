@@ -3,7 +3,7 @@
  * Install (or remove) the open-rc Claude Code integration:
  *
  *   1. Hook entries in `~/.claude/settings.json` —
- *      Stop / UserPromptSubmit / SessionEnd → `open-rc hook <event>`.
+ *      Stop / UserPromptSubmit / Notification / SessionEnd → `open-rc hook <event>`.
  *      These are the browser→session delivery half of `attach-orc`;
  *      they are instant no-ops on sessions that never ran
  *      `/attach-orc` (see src/cli/attach-hooks.ts).
@@ -29,8 +29,8 @@ import { parseFlags } from '../src/cli/flags.ts';
 const HOOK_MARKER = 'open-rc hook';
 
 /** Stop hook needs headroom over the LONG (browser-driven) listening
- *  window — 300 s by default (ORC_STOP_LINGER_ACTIVE_MS). */
-const STOP_TIMEOUT_S = 630;
+ *  window — 1 800 s by default (ORC_STOP_LINGER_ACTIVE_MS). */
+const STOP_TIMEOUT_S = 1_860;
 
 interface HookCommand {
   type: 'command';
@@ -63,6 +63,7 @@ function addedHooks(bin: string): Record<string, HookGroup[]> {
       },
     ],
     UserPromptSubmit: [{ hooks: [{ type: 'command', command: `${bin} hook prompt` }] }],
+    Notification: [{ hooks: [{ type: 'command', command: `${bin} hook notify` }] }],
     SessionEnd: [{ hooks: [{ type: 'command', command: `${bin} hook end` }] }],
   };
 }
@@ -129,7 +130,7 @@ async function main(): Promise<void> {
   } else {
     await installCommandLink(commandsDir, repoCommand);
     console.log(
-      `open-rc hooks installed in ${settingsPath} (Stop / UserPromptSubmit / SessionEnd)`,
+      `open-rc hooks installed in ${settingsPath} (Stop / UserPromptSubmit / Notification / SessionEnd)`,
     );
     console.log(`/attach-orc command linked at ${join(commandsDir, 'attach-orc.md')}`);
     console.log('restart running claude sessions to pick the hooks up');
