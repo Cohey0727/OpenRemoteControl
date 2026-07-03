@@ -19,6 +19,13 @@ UI_DIR   := $(ROOT_DIR)/ui
 # already on your PATH.
 BIN_DIR ?= $(HOME)/.local/bin
 
+# Where setup/teardown write the Claude Code integration. Overriding
+# these (together with BIN_DIR) sandboxes a test run completely —
+# without them a `make setup BIN_DIR=/tmp/x` would still rewrite the
+# REAL ~/.claude hooks to a throwaway path.
+CLAUDE_SETTINGS     ?= $(HOME)/.claude/settings.json
+CLAUDE_COMMANDS_DIR ?= $(HOME)/.claude/commands
+
 # Legacy shell-init file (superseded by the PATH launchers); teardown
 # still removes it so upgraders aren't left with a stale source line.
 SHELL_INIT_DIR  ?= $(HOME)/.config/open-rc
@@ -131,7 +138,8 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	@rm -f $(SHELL_INIT_FILE)
 	@# Claude Code integration: Stop/UserPromptSubmit/SessionEnd hooks in
 	@# ~/.claude/settings.json + the /attach-orc slash command symlink.
-	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/open-rc
+	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/open-rc \
+	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR)
 	@printf '%s\n' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / SessionEnd)$(OFF)' \
@@ -153,7 +161,8 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 
 .PHONY: teardown
 teardown: ## Remove the launcher, Claude Code hooks, and /attach-orc command
-	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --remove || true
+	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --remove \
+	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR) || true
 	@rm -f $(BIN_DIR)/open-rc
 	@rm -f $(BIN_DIR)/attach-orc
 	@rm -f $(HOME)/.claude/commands/attach-orc.md
