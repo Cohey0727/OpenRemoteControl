@@ -75,13 +75,20 @@ rebuilds the same UX against any provider by relaying the public
   queues incoming `prompt` frames to `~/.open-rc/attach/<sessionId>/`;
   the `open-rc hook stop|prompt|end` handlers (installed into
   `~/.claude/settings.json` by `make setup`) drain that queue — Stop
-  blocks with the messages as reason (delivery at turn ends, with a
-  linger window while viewers are attached, `ORC_STOP_LINGER_MS`),
-  UserPromptSubmit attaches them as context, SessionEnd tells the
-  bridge to exit. Known, accepted limitation: a browser message sent
-  while the session is idle past the linger window waits for the next
-  session activity — there is no way to wake an idle interactive
-  `claude` without PTY/tmux/spawn, and those stay banned.
+  blocks with the messages as reason (delivery at turn ends, with an
+  ADAPTIVE linger window while viewers are attached: 45 s normally
+  (`ORC_STOP_LINGER_MS`), 300 s while the conversation is
+  browser-driven (`ORC_STOP_LINGER_ACTIVE_MS`, tracked via
+  `browser-turn.marker`; a real CLI prompt clears it so terminal
+  input never waits long — typing during a running Stop hook QUEUES
+  until the hook exits, which is why the short window must stay
+  short). UserPromptSubmit attaches queued messages as context,
+  SessionEnd tells the bridge to exit. Known, accepted limitation: a
+  browser message sent while the session is idle past its window
+  waits for the next session activity — there is no way to wake an
+  idle interactive `claude` without PTY/tmux/spawn, and those stay
+  banned (the Notification/idle hook cannot inject; verified against
+  docs 2026-07-03).
 - **Sidebar of currently-connected clients.** 300 px sidebar on the
   left, always visible on desktop, slides in/out on mobile. Each row
   = one currently-open WebSocket to `open-rc serve` from a user's

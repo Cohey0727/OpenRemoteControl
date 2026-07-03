@@ -37,9 +37,12 @@ import { z } from 'zod';
 import {
   attachDirFor,
   bridgeAlive,
+  browserTurnMarkerExists,
+  clearBrowserTurnMarker,
   drainQueue,
   endMarkerExists,
   readAttachedCount,
+  touchBrowserTurnMarker,
   touchEndMarker,
   touchStopMarker,
 } from '../attach/state.ts';
@@ -47,6 +50,16 @@ import { OPENRC_MARKER } from '../transcript/translate.ts';
 
 /** Default post-turn listening window while viewers are attached. */
 const DEFAULT_LINGER_MS = 45_000;
+/**
+ * Long window used while the conversation is BROWSER-DRIVEN (the last
+ * turn was injected from an attached view): the terminal is probably
+ * unattended, so listening longer costs nobody anything and keeps a
+ * phone-driven conversation continuously responsive. A prompt typed
+ * in the terminal clears browser-driven mode, restoring the short
+ * window so CLI prompts never wait long. Keep it under the Stop
+ * hook's `timeout` in settings.json (installed as 630 s).
+ */
+const DEFAULT_ACTIVE_LINGER_MS = 300_000;
 /** Queue poll cadence during the linger window. */
 const LINGER_POLL_MS = 300;
 
@@ -72,12 +85,15 @@ export function parseHookInput(raw: string): HookInput | null {
   }
 }
 
-function lingerMs(): number {
-  const raw = process.env.ORC_STOP_LINGER_MS;
-  if (raw === undefined) return DEFAULT_LINGER_MS;
+function envMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
   const n = Number.parseInt(raw, 10);
-  return Number.isNaN(n) || n < 0 ? DEFAULT_LINGER_MS : n;
+  return Number.isNaN(n) || n < 0 ? fallback : n;
 }
+
+const lingerMs = () => envMs('ORC_STOP_LINGER_MS', DEFAULT_LINGER_MS);
+const activeLingerMs = () => envMs('ORC_STOP_LINGER_ACTIVE_MS', DEFAULT_ACTIVE_LINGER_MS);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -99,7 +115,11 @@ export function formatPromptContext(texts: readonly string[]): string {
  */
 export async function runStopHook(
   input: HookInput,
-  opts?: { readonly baseDir?: string; readonly lingerMs?: number },
+  opts?: {
+    readonly baseDir?: string;
+    readonly lingerMs?: number;
+    readonly activeLingerMs?: number;
+  },
 ): Promise<HookResult> {
   const dir = attachDirFor(input.session_id, opts?.baseDir);
   if (!(await bridgeAlive(dir))) return {};
@@ -107,12 +127,20 @@ export async function runStopHook(
   // Turn ended — let the bridge close the turn for attached viewers.
   await touchStopMarker(dir);
 
-  const window = opts?.lingerMs ?? lingerMs();
+  // Browser-driven conversations get the long window: the last turn
+  // was injected from an attached view, so the terminal is probably
+  // unattended and a phone user expects the next reply to just work.
+  const browserDriven = await browserTurnMarkerExists(dir);
+  const window = browserDriven
+    ? (opts?.activeLingerMs ?? activeLingerMs())
+    : (opts?.lingerMs ?? lingerMs());
   const deadline = Date.now() + window;
 
   for (;;) {
     const texts = await drainQueue(dir);
     if (texts.length > 0) {
+      // The next turn is browser-driven; keep listening long after it.
+      await touchBrowserTurnMarker(dir);
       return { output: { decision: 'block', reason: formatBlockReason(texts) } };
     }
     if (await endMarkerExists(dir)) return {};
@@ -135,6 +163,9 @@ export async function runPromptHook(
 ): Promise<HookResult> {
   const dir = attachDirFor(input.session_id, opts?.baseDir);
   if (!(await bridgeAlive(dir))) return {};
+  // A real prompt was typed in the terminal: the CLI user is present,
+  // so drop browser-driven mode and keep their turns snappy.
+  await clearBrowserTurnMarker(dir);
   const texts = await drainQueue(dir);
   if (texts.length === 0) return {};
   return {

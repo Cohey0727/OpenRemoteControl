@@ -9,9 +9,11 @@ import { join } from 'node:path';
 import {
   appendQueue,
   attachDirFor,
+  browserTurnMarkerExists,
   createAttachDir,
   endMarkerExists,
   stopMarkerMtime,
+  touchBrowserTurnMarker,
   writeAttachedCount,
   writeBridgeInfo,
 } from '../src/attach/state.ts';
@@ -90,6 +92,34 @@ describe('runStopHook', () => {
     await writeAttachedCount(dir, 1);
     const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 500 });
     expect(result.output).toBeUndefined();
+  });
+
+  test('browser-driven mode: delivery sets the marker and the long window applies', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await writeAttachedCount(dir, 1);
+    await appendQueue(dir, 'first from browser');
+    const first = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 0 });
+    expect(first.output?.decision).toBe('block');
+    expect(await browserTurnMarkerExists(dir)).toBe(true);
+
+    // Next turn end: the LONG window is used (short window would give
+    // up long before the late message lands at 800 ms).
+    setTimeout(() => {
+      void appendQueue(dir, 'follow-up from browser');
+    }, 800);
+    const second = await runStopHook(
+      { session_id: sessionId },
+      { baseDir: base, lingerMs: 100, activeLingerMs: 5_000 },
+    );
+    expect(second.output?.decision).toBe('block');
+    expect(second.output?.reason as string).toContain('follow-up from browser');
+  });
+
+  test('a CLI prompt clears browser-driven mode', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await touchBrowserTurnMarker(dir);
+    await runPromptHook({ session_id: sessionId, prompt: 'typed locally' }, { baseDir: base });
+    expect(await browserTurnMarkerExists(dir)).toBe(false);
   });
 });
 

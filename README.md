@@ -141,11 +141,17 @@ replays it to `serve` as history, and tails it live — that is the
 session→browser direction. Browser prompts are queued to a per-session
 file, and the open-rc **hooks** (installed by `make setup`) deliver
 them into the running session: the Stop hook picks them up at every
-turn end, and while a browser/tui viewer is attached it keeps a short
-listening window open (default 45 s, tune with `ORC_STOP_LINGER_MS`;
-Esc skips it) so a browser reply lands immediately. A message sent
-while the session has been idle past that window is delivered the next
-time the session wakes up (your next prompt in either place).
+turn end, and while a browser/tui viewer is attached it keeps a
+listening window open after each turn. The window is adaptive:
+normally short (45 s, `ORC_STOP_LINGER_MS`) so prompts you type in the
+terminal never wait long, but once a turn was DRIVEN from the browser
+the terminal is presumed unattended and the window stretches long
+(5 min per turn, `ORC_STOP_LINGER_ACTIVE_MS`) — a phone-driven
+conversation stays continuously responsive, each reply renewing the
+window. Typing in the terminal switches back to the short window. A
+message sent while the session has been idle past its window is
+delivered the next time the session wakes up (your next prompt in
+either place).
 
 Nothing is spawned anywhere in this path: no `claude` subprocess, no
 PTY, no tmux. The bridge only reads a file the session already writes

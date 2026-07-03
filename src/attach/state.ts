@@ -64,7 +64,13 @@ export async function createAttachDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   // A previous bridge for this session may have died uncleanly; start
   // from a blank slate so stale queue entries don't replay into claude.
-  for (const p of [queuePath(dir), queueDrainPath(dir), stopPath(dir), endPath(dir)]) {
+  for (const p of [
+    queuePath(dir),
+    queueDrainPath(dir),
+    stopPath(dir),
+    endPath(dir),
+    browserTurnPath(dir),
+  ]) {
     await unlink(p).catch(() => {});
   }
 }
@@ -209,6 +215,21 @@ export const touchStopMarker = (dir: string) => touchMarker(stopPath(dir));
 export const stopMarkerMtime = (dir: string) => markerMtime(stopPath(dir));
 export const touchEndMarker = (dir: string) => touchMarker(endPath(dir));
 export const endMarkerExists = async (dir: string) => (await markerMtime(endPath(dir))) !== null;
+
+/* ----------------------------- browser-turn marker ------------------------ */
+
+const browserTurnPath = (dir: string) => join(dir, 'browser-turn.marker');
+
+/** Present while the LAST turn was driven from the browser/tui. The
+ *  Stop hook uses it to pick the long listening window (the terminal
+ *  user is probably remote); a real CLI prompt clears it (the
+ *  terminal user is back — keep their prompts snappy). */
+export const touchBrowserTurnMarker = (dir: string) => touchMarker(browserTurnPath(dir));
+export const clearBrowserTurnMarker = async (dir: string) => {
+  await unlink(browserTurnPath(dir)).catch(() => {});
+};
+export const browserTurnMarkerExists = async (dir: string) =>
+  (await markerMtime(browserTurnPath(dir))) !== null;
 
 /** List session ids that currently have an attach dir. */
 export async function listAttachSessions(baseDir?: string): Promise<string[]> {

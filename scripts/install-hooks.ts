@@ -28,8 +28,9 @@ import { parseFlags } from '../src/cli/flags.ts';
 /** Marker every open-rc-managed hook command contains. */
 const HOOK_MARKER = 'open-rc hook';
 
-/** Stop hook needs headroom over the linger window (default 45 s). */
-const STOP_TIMEOUT_S = 300;
+/** Stop hook needs headroom over the LONG (browser-driven) listening
+ *  window — 300 s by default (ORC_STOP_LINGER_ACTIVE_MS). */
+const STOP_TIMEOUT_S = 630;
 
 interface HookCommand {
   type: 'command';
