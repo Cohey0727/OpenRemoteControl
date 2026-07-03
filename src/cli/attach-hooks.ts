@@ -39,10 +39,12 @@ import {
   bridgeAlive,
   browserTurnMarkerExists,
   clearBrowserTurnMarker,
+  clearReleaseMarker,
   drainQueue,
   endMarkerExists,
   queueNonEmpty,
   readAttachedCount,
+  releaseMarkerMtime,
   touchBrowserTurnMarker,
   touchEndMarker,
   touchStopMarker,
@@ -52,17 +54,21 @@ import { OPENRC_MARKER } from '../transcript/translate.ts';
 /** Default post-turn listening window while viewers are attached. */
 const DEFAULT_LINGER_MS = 45_000;
 /**
- * Long window used while the conversation is BROWSER-DRIVEN (the last
- * turn was injected from an attached view): the terminal is probably
- * unattended, so listening longer costs nobody anything and keeps a
- * phone-driven conversation responsive across real-world reply gaps
- * (minutes, not seconds — 5 min proved too short in practice). A
- * prompt typed in the terminal clears browser-driven mode, restoring
- * the short window so CLI prompts never wait long; Esc interrupts a
- * running hook if you need the prompt back mid-window. Keep it under
- * the Stop hook's `timeout` in settings.json (installed as 1 860 s).
+ * Window used while the conversation is BROWSER-DRIVEN (the last turn
+ * was injected from an attached view): UNLIMITED by default. The
+ * terminal is unattended — the remote user owns the session, and any
+ * finite window (5 min, then 30 min) proved to be a cliff someone
+ * eventually fell off. The linger is a sleeping poll loop: no tokens,
+ * no context growth, ~zero CPU. It ends when a message is delivered
+ * (and a fresh one starts at that turn's end), when the session or
+ * bridge ends, or when the terminal user reclaims the prompt with
+ * `open-rc release` (or Esc, where Claude Code allows interrupting
+ * hooks). A prompt typed in the terminal then clears browser-driven
+ * mode, restoring the short window. Set ORC_STOP_LINGER_ACTIVE_MS to
+ * a number to cap it anyway; the installed Stop-hook `timeout`
+ * (30 days) is the outer bound.
  */
-const DEFAULT_ACTIVE_LINGER_MS = 1_800_000;
+const DEFAULT_ACTIVE_LINGER_MS = Number.POSITIVE_INFINITY;
 /** Queue poll cadence during the linger window. */
 const LINGER_POLL_MS = 300;
 
@@ -130,29 +136,40 @@ export async function runStopHook(
   // Turn ended — let the bridge close the turn for attached viewers.
   await touchStopMarker(dir);
 
-  // Browser-driven conversations get the long window: the last turn
-  // was injected from an attached view, so the terminal is probably
-  // unattended and a phone user expects the next reply to just work.
+  // Browser-driven conversations get the unlimited window: the last
+  // turn was injected from an attached view, so the terminal is
+  // presumed unattended and the remote user expects the next reply to
+  // just work — whenever it comes.
   const browserDriven = await browserTurnMarkerExists(dir);
   const window = browserDriven
     ? (opts?.activeLingerMs ?? activeLingerMs())
     : (opts?.lingerMs ?? lingerMs());
   const deadline = Date.now() + window;
+  const lingerStartedAt = Date.now();
 
   for (;;) {
     const texts = await drainQueue(dir);
     if (texts.length > 0) {
-      // The next turn is browser-driven; keep listening long after it.
+      // The next turn is browser-driven; keep listening after it too.
       await touchBrowserTurnMarker(dir);
       return { output: { decision: 'block', reason: formatBlockReason(texts) } };
     }
     if (await endMarkerExists(dir)) return {};
     if (!(await bridgeAlive(dir))) return {};
-    // In normal mode, linger only while someone is actually watching.
-    // In browser-driven mode, keep the full window even at zero
-    // viewers: a phone locking its screen drops the WebSocket (and
-    // the attached count) between every reply — the remote user is
-    // still mid-conversation. Esc in the terminal reclaims the prompt.
+    // `open-rc release` hands the prompt back to the terminal. Only a
+    // marker fresher than THIS linger counts — a stale one must not
+    // kill future windows.
+    const released = await releaseMarkerMtime(dir);
+    if (released !== null && released >= lingerStartedAt) {
+      await clearReleaseMarker(dir);
+      await clearBrowserTurnMarker(dir);
+      return {};
+    }
+    // In normal (CLI-driven) mode, linger only while someone is
+    // actually watching. In browser-driven mode, keep listening even
+    // at zero viewers: a phone locking its screen drops the WebSocket
+    // (and the attached count) between every reply — the remote user
+    // is still mid-conversation.
     if (!browserDriven && (await readAttachedCount(dir)) === 0) return {};
     if (Date.now() >= deadline) return {};
     await sleep(LINGER_POLL_MS);

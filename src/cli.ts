@@ -15,6 +15,8 @@
  *               `/agent` and queues browser prompts for the Claude
  *               Code hooks to deliver. Started in the background by
  *               the `/orc` slash command.
+ *   release     Hand the prompt back to a terminal whose session is in
+ *               browser-driven (unlimited) listening mode.
  *   hook        Claude Code hook handlers (stop|prompt|notify|end) —
  *               the queue-delivery half of attach-orc. Wired into
  *               `~/.claude/settings.json` by `make setup`.
@@ -26,12 +28,14 @@
  * anywhere in open-rc.
  */
 
+import { attachDirFor, bridgeAlive, touchReleaseMarker } from './attach/state.ts';
 import { runHookCommand } from './cli/attach-hooks.ts';
 import { parseAttachOrcFlags, runAttachOrc } from './cli/attach-orc.ts';
 import { parseFlags } from './cli/flags.ts';
 import { parseTuiFlags, runTui } from './cli/tui.ts';
 import { HubServer } from './hub/server.ts';
 import { serve } from './serve.ts';
+import { resolveTranscript } from './transcript/locate.ts';
 
 function parseArgs(argv: string[]): {
   command: string;
@@ -125,12 +129,42 @@ if (command === 'serve' || command === '') {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+} else if (command === 'release') {
+  // Hand the prompt back to a terminal whose Stop hook is lingering in
+  // browser-driven (unlimited) listening mode. Touches the release
+  // marker; the lingering hook exits within its next poll and
+  // browser-driven mode is cleared. Run it from the project directory
+  // (`open-rc release`) or name the session (`--session-id <id>`).
+  const relFlags = parseFlags(process.argv.slice(3));
+  const explicitId = typeof relFlags.sessionId === 'string' ? relFlags.sessionId : undefined;
+  let sessionId = explicitId;
+  if (!sessionId) {
+    try {
+      const cwd = typeof relFlags.cwd === 'string' ? relFlags.cwd : process.cwd();
+      const located = await resolveTranscript({ cwd });
+      sessionId = located.sessionId;
+    } catch (err) {
+      console.error(`open-rc release: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
+  }
+  const dir = attachDirFor(sessionId);
+  if (!(await bridgeAlive(dir))) {
+    console.error(
+      `open-rc release: no active bridge for session ${sessionId} — nothing to release`,
+    );
+    process.exit(1);
+  }
+  await touchReleaseMarker(dir);
+  console.log(
+    `open-rc release: session ${sessionId} — the listening window will close within a second.`,
+  );
 } else if (command === 'hook') {
   const event = process.argv[3] ?? '';
   const stdinText = await Bun.stdin.text();
   process.exit(await runHookCommand(event, stdinText));
 } else {
   console.error(`unknown command: ${command}`);
-  console.error('available commands: serve, hub, tui, attach-orc, hook');
+  console.error('available commands: serve, hub, tui, attach-orc, hook, release');
   process.exit(2);
 }

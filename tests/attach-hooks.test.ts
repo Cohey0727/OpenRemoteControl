@@ -14,6 +14,7 @@ import {
   endMarkerExists,
   stopMarkerMtime,
   touchBrowserTurnMarker,
+  touchReleaseMarker,
   writeAttachedCount,
   writeBridgeInfo,
 } from '../src/attach/state.ts';
@@ -135,6 +136,45 @@ describe('runStopHook', () => {
     );
     expect(result.output?.decision).toBe('block');
     expect(result.output?.reason as string).toContain('sent after unlocking the phone');
+  });
+
+  test('browser-driven mode listens without a deadline (default window is unlimited)', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await touchBrowserTurnMarker(dir);
+    await writeAttachedCount(dir, 0);
+    // lingerMs 100 would give up long before 900 ms — only the
+    // unlimited browser-driven default keeps the hook alive.
+    setTimeout(() => {
+      void appendQueue(dir, 'late but still delivered');
+    }, 900);
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 100 });
+    expect(result.output?.decision).toBe('block');
+    expect(result.output?.reason as string).toContain('late but still delivered');
+  });
+
+  test('open-rc release ends a lingering window and clears browser-driven mode', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await touchBrowserTurnMarker(dir);
+    setTimeout(() => {
+      void touchReleaseMarker(dir);
+    }, 400);
+    const started = Date.now();
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base });
+    expect(result.output).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(await browserTurnMarkerExists(dir)).toBe(false);
+  });
+
+  test('a stale release marker does not kill the next window', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await touchReleaseMarker(dir); // released some time in the past
+    await new Promise((r) => setTimeout(r, 50));
+    await touchBrowserTurnMarker(dir);
+    setTimeout(() => {
+      void appendQueue(dir, 'delivered despite old marker');
+    }, 400);
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base });
+    expect(result.output?.decision).toBe('block');
   });
 
   test('a CLI prompt clears browser-driven mode', async () => {

@@ -70,6 +70,7 @@ export async function createAttachDir(dir: string): Promise<void> {
     stopPath(dir),
     endPath(dir),
     browserTurnPath(dir),
+    releasePath(dir),
   ]) {
     await unlink(p).catch(() => {});
   }
@@ -215,6 +216,20 @@ export const touchStopMarker = (dir: string) => touchMarker(stopPath(dir));
 export const stopMarkerMtime = (dir: string) => markerMtime(stopPath(dir));
 export const touchEndMarker = (dir: string) => touchMarker(endPath(dir));
 export const endMarkerExists = async (dir: string) => (await markerMtime(endPath(dir))) !== null;
+
+/* ----------------------------- release marker ----------------------------- */
+
+const releasePath = (dir: string) => join(dir, 'release.marker');
+
+/** `open-rc release` touches this to make a lingering Stop hook exit
+ *  and hand the prompt back to the terminal. A linger honors it only
+ *  when it is FRESHER than the linger's own start, so a stale marker
+ *  can never kill a future window. */
+export const touchReleaseMarker = (dir: string) => touchMarker(releasePath(dir));
+export const releaseMarkerMtime = (dir: string) => markerMtime(releasePath(dir));
+export const clearReleaseMarker = async (dir: string) => {
+  await unlink(releasePath(dir)).catch(() => {});
+};
 
 /* ----------------------------- browser-turn marker ------------------------ */
 

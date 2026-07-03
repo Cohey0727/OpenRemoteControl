@@ -28,9 +28,10 @@ import { parseFlags } from '../src/cli/flags.ts';
 /** Marker every open-rc-managed hook command contains. */
 const HOOK_MARKER = 'open-rc hook';
 
-/** Stop hook needs headroom over the LONG (browser-driven) listening
- *  window — 1 800 s by default (ORC_STOP_LINGER_ACTIVE_MS). */
-const STOP_TIMEOUT_S = 1_860;
+/** Outer bound for the Stop hook. The browser-driven listening window
+ *  is unlimited by design (`open-rc release` reclaims the prompt), so
+ *  this is a 30-day backstop, not a feature knob. */
+const STOP_TIMEOUT_S = 2_592_000;
 
 interface HookCommand {
   type: 'command';

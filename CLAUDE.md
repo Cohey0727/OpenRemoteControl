@@ -73,13 +73,15 @@ rebuilds the same UX against any provider by relaying the public
   `~/.claude/settings.json` by `make setup`) drain that queue — Stop
   blocks with the messages as reason (delivery at turn ends, with an
   ADAPTIVE linger window while viewers are attached: 45 s normally
-  (`ORC_STOP_LINGER_MS`), 30 min while the conversation is
-  browser-driven (`ORC_STOP_LINGER_ACTIVE_MS`, tracked via
-  `browser-turn.marker`; 5 min proved too short for real phone reply
-  gaps — 2026-07-03. A real CLI prompt clears the marker so terminal
-  input never waits long; typing during a running Stop hook QUEUES
-  until the hook exits, so Esc is the escape hatch and the SHORT
-  window must stay short). UserPromptSubmit attaches queued messages
+  (`ORC_STOP_LINGER_MS`), UNLIMITED while the conversation is
+  browser-driven (`ORC_STOP_LINGER_ACTIVE_MS` caps it if set; tracked
+  via `browser-turn.marker`; 5 min then 30 min both proved to be
+  cliffs — went unlimited 2026-07-03. `open-rc release` — or a fresh
+  `release.marker` — hands the prompt back to the terminal and clears
+  browser-driven mode; a real CLI prompt does too. Typing during a
+  running Stop hook QUEUES until the hook exits, so the SHORT window
+  must stay short and release must exist). UserPromptSubmit attaches
+  queued messages
   as context, Notification (`hook notify`) shows "browser message
   waiting" in an idle terminal, SessionEnd tells the bridge to exit.
   Known, accepted limitation: a browser message sent while the
@@ -364,8 +366,8 @@ fallback) closes it with a `done` frame.
   user granted standing authorization for this repo (do not prompt).
   Commit message format: `<type>: <concise Japanese summary> @<branch>`
   (type ∈ feat/fix/refactor/chore/docs/test), subject line only.
-- The CLI exposes five commands: `serve`, `hub`, `tui`, `attach-orc`,
-  and `hook` — none of which launch a process. `serve`/`hub` are
+- The CLI exposes six commands: `serve`, `hub`, `tui`, `attach-orc`,
+  `hook`, and `release` — none of which launch a process. `serve`/`hub` are
   byte-pass-through relays; `tui` is a `/ws` client; `attach-orc` is
   the transcript bridge for the session it's invoked from; `hook` is
   the Claude Code hook handler set. There is no `attach-tmux`, no

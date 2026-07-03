@@ -146,17 +146,17 @@ turn end, and while a browser/tui viewer is attached it keeps a
 listening window open after each turn. The window is adaptive:
 normally short (45 s, `ORC_STOP_LINGER_MS`) so prompts you type in the
 terminal never wait long, but once a turn was DRIVEN from the browser
-the terminal is presumed unattended and the window stretches long
-(30 min per turn, `ORC_STOP_LINGER_ACTIVE_MS`) — a phone-driven
-conversation stays responsive across real-world reply gaps, each
-reply renewing the window. Typing in the terminal switches back to
-the short window (press Esc first if a window is still running). A
-message sent while the session has been idle past its window is
-delivered the next time the session wakes up (your next prompt in
-either place) — the browser shows a "message queued — session is
-idle" note immediately so it never looks like a hang, and the idle
-terminal shows a "browser message waiting" hint via the Notification
-hook.
+the terminal is presumed unattended and the session listens
+**indefinitely** — a remote conversation never falls off a window
+cliff, no matter how long you take to reply. Reclaim the terminal any
+time with `open-rc release` (run in the project directory; or Esc,
+where Claude Code allows interrupting hooks) — typing a prompt then
+returns everything to the short window. Cap the unlimited mode with
+`ORC_STOP_LINGER_ACTIVE_MS` if you prefer a deadline. Messages that
+do arrive with no window open (e.g. before the first browser turn)
+get an immediate "message queued — session is idle" note in the
+browser and a waiting-message hint in the idle terminal, and are
+delivered on the session's next activity.
 
 Nothing is spawned anywhere in this path: no `claude` subprocess, no
 PTY, no tmux. The bridge only reads a file the session already writes
