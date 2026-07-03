@@ -13,7 +13,7 @@
     "url": "https://github.com/Cohey0727/OpenRemoteControl/issues"
   },
   "bin": {
-    "open-rc": "./src/cli.ts"
+    "orc": "./src/cli.ts"
   },
   "files": ["src", "ui", "README.md", "SECURITY.md", "LICENSE"],
   "keywords": ["claude", "claude-code", "remote", "control-plane", "agent", "relay"],

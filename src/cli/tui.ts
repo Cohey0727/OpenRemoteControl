@@ -1,11 +1,11 @@
 /**
- * `open-rc tui` — a terminal front-end for a session that open-rc serve
+ * `orc tui` — a terminal front-end for a session that orc serve
  * is relaying.
  *
  * It is a plain `/ws` client, exactly like the browser SPA: it does NOT
  * start or own `claude`. A user-owned bridge owns the `claude` (piping
  * its stream-json to `/agent`); the browser and this `tui` are both
- * clients of `open-rc serve`, attached to the same clientId — so they
+ * clients of `orc serve`, attached to the same clientId — so they
  * share ONE live session. A prompt typed here shows up in the browser
  * and vice-versa, and both see the same stream.
  *

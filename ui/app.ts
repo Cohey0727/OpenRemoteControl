@@ -1,7 +1,7 @@
 /**
  * open-rc SPA — vanilla TypeScript, no framework.
  *
- * The relay is `open-rc serve`; this file is the browser side that talks
+ * The relay is `orc serve`; this file is the browser side that talks
  * to it. We use a tiny signal implementation (~30 lines) for reactivity
  * and DOM is built with the native `document` API. No build step —
  * `Bun.Transpiler` compiles this on the fly.

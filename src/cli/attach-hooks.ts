@@ -1,8 +1,8 @@
 /**
- * `open-rc hook <stop|prompt|end>` — Claude Code hook handlers.
+ * `orc hook <stop|prompt|notify|ask|end>` — Claude Code hook handlers.
  *
  * These are the browser → session half of the shared-session bridge.
- * `open-rc attach-orc` appends browser prompts to a per-session queue
+ * `orc attach` appends browser prompts to a per-session queue
  * file; these handlers, wired into `~/.claude/settings.json` by
  * `make setup`, deliver them INTO the running interactive session at
  * the only moments Claude Code gives outside code a voice:
@@ -321,7 +321,7 @@ export async function runEndHook(
   return {};
 }
 
-/** CLI entry: `open-rc hook <event>` with hook JSON on stdin. */
+/** CLI entry: `orc hook <event>` with hook JSON on stdin. */
 export async function runHookCommand(event: string, stdinText: string): Promise<number> {
   const input = parseHookInput(stdinText);
   if (!input) return 0; // never break claude over malformed hook input

@@ -1,5 +1,5 @@
 /**
- * WebSocket relay — the heart of `open-rc serve`.
+ * WebSocket relay — the heart of `orc serve`.
  *
  * The server holds exactly one piece of mutable state:
  *   `clients: Map<clientId, BridgeConn>`

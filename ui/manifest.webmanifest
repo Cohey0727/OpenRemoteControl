@@ -1,7 +1,7 @@
 {
   "id": "/",
   "name": "Open Remote Control",
-  "short_name": "open-rc",
+  "short_name": "ORC",
   "description": "Drive a locally-running Claude Code from a browser — including a phone.",
   "start_url": "/",
   "scope": "/",

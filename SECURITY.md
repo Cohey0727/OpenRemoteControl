@@ -7,10 +7,10 @@ between the user's own `claude` session (fed to the relay by a bridge —
 open-rc never runs `claude` as a subprocess) and a remote UI (browser
 or mobile). The threat model assumes:
 
-- The device running `open-rc serve` is fully under the operator's
+- The device running `orc serve` is fully under the operator's
   control (laptop, server).
 - The UI is reached over a network the operator controls OR via the
-  optional `open-rc hub` relay.
+  optional `orc hub` relay.
 - The user's `claude` session itself is trusted — its tool calls are
   what the operator wants to mediate, not block.
 
@@ -36,7 +36,7 @@ forwards user prompts and tool-call requests to Claude Code.
   `~/.local/share/open-rc/vapid.json`. If you delete this file, all
   existing browser push subscriptions become invalid; users will need
   to re-subscribe.
-- **Hub device identity**: each `open-rc serve` instance generates a
+- **Hub device identity**: each `orc serve` instance generates a
   per-host Ed25519 keypair the first time it connects to a hub. The
   private key is stored locally at `~/.local/share/open-rc/device.key`;
   never commit it.
@@ -58,7 +58,7 @@ forwards user prompts and tool-call requests to Claude Code.
 - **Take-over trust**: not a concern. There is no
   `/api/external-sessions/:pid/claim` endpoint, no
   `claim_external_session` WS frame, and no take-over flow of any
-  kind. `open-rc serve` starts no processes, so it has none to kill
+  kind. `orc serve` starts no processes, so it has none to kill
   or replace.
 - **Authorization**: the audit log records decisions but does not
   enforce policy. Read it.
@@ -83,7 +83,7 @@ forwards user prompts and tool-call requests to Claude Code.
 Sharing a session widens what a viewer can see and do — by design.
 Know what you are enabling:
 
-- **Transcript exposure.** `open-rc attach-orc` reads the session's
+- **Transcript exposure.** `orc attach` reads the session's
   transcript JSONL (`~/.claude/projects/…`) read-only and replays it
   to `serve`; every attached browser/`tui` sees the conversation,
   tool commands, and (truncated) tool output. With serve on
@@ -95,7 +95,7 @@ Know what you are enabling:
   hooks WILL deliver into your running session, marked with
   `[open-rc]`. That is the feature. It also means exposing serve
   without auth hands strangers a typewriter into your Claude session.
-- **Hooks are inert by default.** `open-rc hook stop|prompt|end`
+- **Hooks are inert by default.** `orc hook stop|prompt|end`
   (installed by `make setup` into `~/.claude/settings.json`) exit
   immediately unless `~/.open-rc/attach/<sessionId>/bridge.json` has a
   heartbeat fresher than 45 s — i.e. unless that specific session ran
@@ -142,5 +142,5 @@ issues.
       has to be readable for the browser to offer install). Treat
       them as if they were served by any static-file host: nothing
       sensitive in `ui/`.
-- [ ] Two `open-rc serve` instances can coexist as long as they bind
+- [ ] Two `orc serve` instances can coexist as long as they bind
       to different ports. The server has no per-cwd state.

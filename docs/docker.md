@@ -9,7 +9,7 @@ lives) and dial the container's published port.
 ```mermaid
 flowchart LR
     subgraph container["Docker container"]
-        serve["open-rc serve<br/>UI · /ws · /agent"] --> data[("/data volume<br/>(VAPID · push · audit)")]
+        serve["orc serve<br/>UI · /ws · /agent"] --> data[("/data volume<br/>(VAPID · push · audit)")]
     end
     subgraph host["Host (your machine)"]
         claude["claude + /orc bridge"]
@@ -87,7 +87,7 @@ is therefore the real exposure decision**:
 
 | Mapping | Meaning |
 | ------- | ------- |
-| `127.0.0.1:7322:7322` (default) | Loopback only — same trust model as bare `open-rc serve`. |
+| `127.0.0.1:7322:7322` (default) | Loopback only — same trust model as bare `orc serve`. |
 | `7322:7322` | Every interface on the host. The relay has **no authentication**: anyone who can reach the port can read every shared session and type into it. Do this only behind TLS + auth (reverse proxy, Tailscale, VPN). See `SECURITY.md`. |
 | `127.0.0.1:9000:7322` | Different host port; the container side stays 7322. |
 
@@ -125,7 +125,7 @@ Docker awareness needed, because the defaults already point at
 
 ```bash
 /orc                  # inside claude — works as-is
-open-rc tui                  # host tui — works as-is
+orc tui                  # host tui — works as-is
 ```
 
 Non-default port or a relay on another machine: set `ORC_BASE_URL`
@@ -217,7 +217,7 @@ and there is no `claude` in the container. Run those on the host.
 - **Upgrade.** `git pull && docker compose up -d --build`. The image
   runs from source, so a rebuild is the whole upgrade; `/data` carries
   your state across.
-- **`EADDRINUSE` / port already allocated.** A bare `open-rc serve`
+- **`EADDRINUSE` / port already allocated.** A bare `orc serve`
   (or another container) already owns host port 7322. Stop it, or
   remap the compose port. Bare serve and Docker serve are the same
   relay — run one or the other, not both on one port.

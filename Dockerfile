@@ -3,7 +3,7 @@
 # One image, the whole CLI: `serve` (default), `hub`, and `tui`. Runs
 # straight from the TypeScript source with Bun — no build step, same
 # as the repo's no-build philosophy. The container never runs
-# `claude`: it is the relay side only. `/attach-orc` (bridge + hooks)
+# `claude`: it is the relay side only. `/orc` (bridge + hooks)
 # runs on the host next to your claude and dials the published port.
 #
 #   docker build -t open-rc .
@@ -11,8 +11,8 @@
 #   # or: docker compose up -d
 #
 # Other commands ride the same image:
-#   docker run --rm -it open-rc tui --server ws://host.docker.internal:7322/ws
-#   docker run -d -p 7443:7443 open-rc hub --host 0.0.0.0 --port 7443
+#   docker run --rm -it orc tui --server ws://host.docker.internal:7322/ws
+#   docker run -d -p 7443:7443 orc hub --host 0.0.0.0 --port 7443
 
 FROM oven/bun:1.3-slim
 

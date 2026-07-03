@@ -1,6 +1,6 @@
 # Deploying the Open Remote Control relay
 
-How to run `open-rc serve` on the common platforms — a generic VPS,
+How to run `orc serve` on the common platforms — a generic VPS,
 AWS ECS (Fargate), Google Cloud Run, and friends. The repo carries no
 environment-specific deploy files (hosts, domains, account IDs stay in
 your local tooling); this document is the pattern book.
@@ -12,7 +12,7 @@ URL. Your phone/browser opens the same URL.
 
 ```mermaid
 flowchart LR
-    phone["phone / browser"] -- wss --> serve["open-rc serve<br/>(one container, in the cloud)"]
+    phone["phone / browser"] -- wss --> serve["orc serve<br/>(one container, in the cloud)"]
     machine["your machine<br/>claude + /orc"] -- wss --> serve
 ```
 
@@ -190,5 +190,5 @@ In all cases the client side is identical:
 ```bash
 export ORC_BASE_URL=https://<your-relay-domain>
 /orc            # inside claude
-open-rc tui            # terminal view of the same session
+orc tui            # terminal view of the same session
 ```

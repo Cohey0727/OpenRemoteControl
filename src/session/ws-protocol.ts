@@ -1,5 +1,5 @@
 /**
- * Wire protocol between the browser SPA, the open-rc server, and the
+ * Wire protocol between the browser SPA, the orc server, and the
  * user-owned bridge (whatever pipes `claude`'s `stream-json` to a
  * WebSocket).
  *

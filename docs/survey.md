@@ -447,14 +447,14 @@ ACP approach buys us multi-agent support for free. Not now.
 ### Pure-relay pivot (Phase 7 addendum)
 
 Earlier versions of `open-rc` shipped a server that launched one
-`claude` subprocess per session (`open-rc attach` / `attach-orc`,
+`claude` subprocess per session (`orc attach` / `attach-orc`,
 plus a server-side `SessionManager`). That model has been removed in
 favor of a pure WebSocket relay:
 
-- **`open-rc serve` starts no processes.** No `fork`, no `exec`, no
+- **`orc serve` starts no processes.** No `fork`, no `exec`, no
   process-creation calls of any kind. The server's process table is
   unchanged after `serve` boots.
-- **`open-rc serve` does not manage anything.** No session lifecycle,
+- **`orc serve` does not manage anything.** No session lifecycle,
   no disk persistence, no `sessions.json` (only a bounded in-memory
   replay buffer per connected client, dropped on disconnect).
 - **The user runs `claude` themselves.** Whatever pipeline they use

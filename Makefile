@@ -88,7 +88,7 @@ serve-hints:
 	@printf '%s\n' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
 	  '   $(CYAN)/orc$(OFF)     $(DIM)inside claude — THIS session appears in the sidebar$(OFF)' \
-	  '   $(CYAN)open-rc tui$(OFF)     $(DIM)a terminal window onto the same session$(OFF)' \
+	  '   $(CYAN)orc tui$(OFF)         $(DIM)a terminal window onto the same session$(OFF)' \
 	  '' \
 	  ' $(DIM)ctrl-c stops the relay$(OFF)' \
 	  ''
@@ -126,30 +126,32 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	  printf '%s\n' '#!/bin/sh' \
 	    ': "$${ORC_BASE_URL:='"$$URL"'}"' \
 	    'export ORC_BASE_URL' \
-	    'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc; \
+	    'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/orc; \
 	  printf ' %s\n' '$(AMBER)◉$(OFF) $(DIM)relay$(OFF)     $(CYAN)'"$$URL"'$(OFF) $(DIM)(launcher default — env still wins)$(OFF)'; \
 	else \
-	  printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/open-rc; \
+	  printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/orc; \
 	fi
-	@chmod +x $(BIN_DIR)/open-rc
-	@# Upgraders: drop the long-gone standalone attach-orc launcher and
-	@# the superseded shell-init file if an older setup left them.
+	@chmod +x $(BIN_DIR)/orc
+	@# Clean break (2026-07-03): the launcher is `orc` now. Drop the old
+	@# `open-rc` / `attach-orc` launchers and the superseded shell-init
+	@# file so the command exists under one name only.
+	@rm -f $(BIN_DIR)/open-rc
 	@rm -f $(BIN_DIR)/attach-orc
 	@rm -f $(SHELL_INIT_FILE)
 	@# Claude Code integration: Stop/UserPromptSubmit/SessionEnd hooks in
 	@# ~/.claude/settings.json + the /orc slash command symlink.
-	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/open-rc \
+	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/orc \
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR)
 	@printf '%s\n' \
-	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/open-rc' \
+	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/orc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / Notification / SessionEnd)$(OFF)' \
 	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/orc.md'
 	@printf '%s\n' \
 	  '' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
-	  '   $(CYAN)open-rc serve$(OFF)      $(DIM)the relay + SPA$(OFF)' \
-	  '   $(CYAN)/orc$(OFF)        $(DIM)inside claude — mirror THIS session to the browser$(OFF)' \
-	  '   $(CYAN)open-rc tui$(OFF)        $(DIM)a terminal window onto a relayed session$(OFF)' \
+	  '   $(CYAN)orc serve$(OFF)      $(DIM)the relay + SPA$(OFF)' \
+	  '   $(CYAN)/orc$(OFF)           $(DIM)inside claude — mirror THIS session to the browser$(OFF)' \
+	  '   $(CYAN)orc tui$(OFF)        $(DIM)a terminal window onto a relayed session$(OFF)' \
 	  ''
 	@case ":$$PATH:" in \
 	  *":$(BIN_DIR):"*) ;; \
@@ -163,12 +165,14 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 teardown: ## Remove the launcher, Claude Code hooks, and /orc command
 	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --remove \
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR) || true
+	@rm -f $(BIN_DIR)/orc
+	@rm -f $(BIN_DIR)/orc
 	@rm -f $(BIN_DIR)/open-rc
 	@rm -f $(BIN_DIR)/attach-orc
 	@rm -f $(HOME)/.claude/commands/orc.md
 	@rm -f $(HOME)/.claude/commands/attach-orc.md
 	@rm -f $(SHELL_INIT_FILE)
-	@echo "Removed: $(BIN_DIR)/open-rc, Claude Code hooks, and /orc command"
+	@echo "Removed: $(BIN_DIR)/orc, Claude Code hooks, and /orc command"
 	@echo "Note: any 'export PATH=$(BIN_DIR):...' or 'source $(SHELL_INIT_FILE)' lines"
 	@echo "      you added to ~/.zshrc / ~/.bashrc were NOT removed — clean those up by hand."
 

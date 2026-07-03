@@ -29,7 +29,7 @@ Each phase ends with something a real person can use. We don't ship
 a phase until its deliverable runs end-to-end and the user can
 demonstrate the value described in that phase's "Definition of done."
 
-The approach is fixed: `open-rc serve` is a pure WebSocket relay.
+The approach is fixed: `orc serve` is a pure WebSocket relay.
 It does not start or manage `claude`. The user runs `claude`
 themselves and brings their own bridge. See
 [`architecture.md`](./architecture.md) and [`survey.md`](./survey.md).
@@ -49,7 +49,7 @@ themselves and brings their own bridge. See
 
 **Scope.**
 
-- `open-rc serve` (default command).
+- `orc serve` (default command).
 - Binds `127.0.0.1:7322` (configurable via `--port`).
 - Bun.serve hosting the SPA + WebSocket on `/ws` (browsers) and
   `/agent` (user-owned bridges).
@@ -114,12 +114,12 @@ user's bridge and their `claude` configuration.
 
 ## Phase 4 — Hub mode — ✓ DONE
 
-**Goal.** A self-hostable public deployment that many `open-rc serve`
+**Goal.** A self-hostable public deployment that many `orc serve`
 instances dial into, and many browser/mobile clients attach to.
 
 **Scope.**
 
-- `open-rc hub` command: same binary, different mode.
+- `orc hub` command: same binary, different mode.
 - WSS listener (TLS via `bun:tls`).
 - bun:sqlite schema for registered devices, sessions, audit log.
 - Ed25519 device enrollment: first run, generate keypair, print
@@ -129,8 +129,8 @@ instances dial into, and many browser/mobile clients attach to.
 
 **Definition of done — ✓ met.**
 
-- Two `open-rc serve` instances on different machines dial into one
-  `open-rc hub`.
+- Two `orc serve` instances on different machines dial into one
+  `orc hub`.
 - User logs into hub from a phone browser.
 - Phone sees both machines' client list.
 - User sends a prompt from phone → reaches the right machine → reply
@@ -184,7 +184,7 @@ instances dial into, and many browser/mobile clients attach to.
 
 ## Phase 7 — Pure-relay pivot — ✓ DONE
 
-**Goal.** `open-rc serve` is a pure WebSocket relay. It starts and
+**Goal.** `orc serve` is a pure WebSocket relay. It starts and
 manages nothing. The user runs `claude` themselves and brings their
 own bridge.
 
@@ -195,7 +195,7 @@ belongs.
 
 **Scope.**
 
-- **Remove `open-rc attach` from the CLI.** Delete `src/attach.ts`
+- **Remove `orc attach` from the CLI.** Delete `src/attach.ts`
   if present, remove from `src/cli.ts` dispatch, remove from
   `package.json` `bin` aliases (none should exist).
 - **Remove `src/session/subprocess.ts`.** This was the class that
@@ -275,14 +275,14 @@ belongs.
 
 **Definition of done.**
 
-- `open-rc serve` starts no processes. `pgrep -f claude`
+- `orc serve` starts no processes. `pgrep -f claude`
   shows zero results immediately after `serve` boots.
 - A static scan of `src/serve.ts`, `src/cli.ts`, and `src/ws.ts`
   finds no process-launch calls.
 - A scan of `src/` for process-launch calls returns zero matches
   except in comments that explicitly note the historical constraint.
-- The CLI surface is exactly `serve` and `hub`. `open-rc attach`
-  and `open-rc attach-orc` are unknown commands. *(Superseded by
+- The CLI surface is exactly `serve` and `hub`. `orc attach`
+  and `orc attach` are unknown commands. *(Superseded by
   Phase 7.5 — see above.)*
 - The UI has no "+ New session" button and no "× Remove" button.
   The sidebar is passive.
@@ -298,13 +298,13 @@ belongs.
 
 ---
 
-## Phase 7.5 — `open-rc attach-orc` CLI (third command) — ✓ DONE, ✗ REMOVED 2026-07-02
+## Phase 7.5 — `orc attach` CLI (third command) — ✓ DONE, ✗ REMOVED 2026-07-02
 
 **Goal.** Give the user a one-liner to drive a CLI-launched `claude`
 session from the browser without writing a bridge by hand. The
 command is named `attach-orc` (`orc` = "open remote control").
 
-Phase 7 deleted the historical `open-rc attach` to enforce the
+Phase 7 deleted the historical `orc attach` to enforce the
 "server never launches processes" rule. This phase re-adds an attach
 entry point as a **CLI** command — `attach-orc` — a separate process
 the user runs in their terminal — so the server itself launches
@@ -372,7 +372,7 @@ Reaffirmed constraints:
 - Removing the slash command (via `make teardown` or by deleting
   `commands/orc.md`) does not affect the CLI or the server.
 
-### Phase 7.7 — Shared session (`open-rc tui`) — ✓ DONE
+### Phase 7.7 — Shared session (`orc tui`) — ✓ DONE
 
 **Goal.** One session, driven from BOTH the browser and a terminal.
 The realization: a `claude` process has one stdin/stdout, so live
@@ -380,7 +380,7 @@ bidirectional sharing requires a single owner and many thin clients —
 not two `claude`s. (True live-mirroring of a *native* `claude` TUI is
 the private RemoteControl feature open-rc avoids; out of scope.)
 
-- `src/cli/tui.ts` — `open-rc tui`, a terminal front-end that is a
+- `src/cli/tui.ts` — `orc tui`, a terminal front-end that is a
   plain `/ws` client (the same protocol the browser SPA speaks). It
   attaches to a clientId, renders the stream, reads stdin → `send`,
   and handles permissions (`/allow` / `/deny`). It starts no processes.
@@ -560,7 +560,7 @@ one the user is already sitting in.
 
 **Mechanics (zero spawning, kept forever).**
 
-- `open-rc attach-orc` (`src/cli/attach-orc.ts`) resolves the newest
+- `orc attach` (`src/cli/attach.ts`) resolves the newest
   transcript JSONL for its cwd (`src/transcript/locate.ts` — the
   session that just ran `/orc` modified its transcript last),
   registers on `/agent` with **clientId = session id** (stable deep
@@ -589,7 +589,7 @@ one the user is already sitting in.
 command; `/orc` in a running session → sidebar row (session id)
 → click → full history → browser send → session responds at the next
 hook moment → response visible in browser, terminal, and `tui`.
-Integration-tested in `tests/attach-orc-bridge.test.ts` (in-process
+Integration-tested in `tests/attach-bridge.test.ts` (in-process
 serve + fixture transcript; no child processes in the test suite).
 
 **Accepted limitation.** A browser message sent while the session is

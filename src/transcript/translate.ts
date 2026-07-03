@@ -1,6 +1,6 @@
 /**
  * Translate Claude Code transcript JSONL entries into the BridgeFrame
- * shapes `open-rc serve` relays to browsers.
+ * shapes `orc serve` relays to browsers.
  *
  * A transcript is the session's own on-disk record
  * (`~/.claude/projects/<project>/<session>.jsonl`). Each line is one

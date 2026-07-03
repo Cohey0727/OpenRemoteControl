@@ -1,6 +1,6 @@
 /**
- * `open-rc attach-orc` — share an ALREADY-RUNNING Claude Code session
- * with `open-rc serve`, without owning it.
+ * `orc attach` — share an ALREADY-RUNNING Claude Code session
+ * with `orc serve`, without owning it.
  *
  * The bridge never spawns, signals, or even sees the `claude`
  * process. It knows the session only through two artifacts the
@@ -12,7 +12,7 @@
  *                       BridgeFrames for `/agent`.
  *   viewers → session   `prompt` frames from the server are appended
  *                       to the per-session queue file; the Claude Code
- *                       hooks (`open-rc hook …`, see attach-hooks.ts)
+ *                       hooks (`orc hook …`, see attach-hooks.ts)
  *                       deliver them into the running session at turn
  *                       boundaries.
  *
@@ -86,7 +86,7 @@ const WATCHDOG_POLL_MS = 15_000;
 /* -------------------------------------------------------------------------- */
 
 export interface AttachOrcFlags {
-  /** `/agent` WebSocket URL of the open-rc server. */
+  /** `/agent` WebSocket URL of the orc server. */
   server: string;
   /** Sidebar label. */
   label: string;
@@ -331,7 +331,7 @@ export async function runAttachOrc(
         send({
           type: 'error',
           message:
-            'this session does not appear to run the open-rc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
+            'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
         });
       })();
     }, 5_000);
@@ -384,7 +384,7 @@ export async function runAttachOrc(
   const shutdown = async (reason: string): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    log(`open-rc attach-orc: shutting down (${reason})`);
+    log(`orc attach: shutting down (${reason})`);
     clearInterval(heartbeat);
     clearInterval(markerPoll);
     clearInterval(watchdog);
@@ -468,7 +468,7 @@ export async function runAttachOrc(
           rejectFirstRegister?.(new Error(message));
           rejectFirstRegister = null;
         } else {
-          log(`open-rc attach-orc: server error: ${message}`);
+          log(`orc attach: server error: ${message}`);
         }
         return;
       }
@@ -477,7 +477,7 @@ export async function runAttachOrc(
           void appendQueue(dir, msg.text)
             .then(() => notifyIfNoListener())
             .catch((err) => {
-              log(`open-rc attach-orc: failed to queue prompt: ${err}`);
+              log(`orc attach: failed to queue prompt: ${err}`);
             });
         }
         return;
@@ -485,7 +485,7 @@ export async function runAttachOrc(
       case 'question_response': {
         if (typeof msg.requestId === 'string' && Array.isArray(msg.answers)) {
           void writeAnswer(dir, msg.requestId, msg.answers).catch((err) => {
-            log(`open-rc attach-orc: failed to record answer: ${err}`);
+            log(`orc attach: failed to record answer: ${err}`);
           });
         }
         return;
@@ -552,7 +552,7 @@ export async function runAttachOrc(
     if (stopped || !registeredOnce || !ws) return;
     if (ws.readyState !== WebSocket.OPEN) return;
     if (Date.now() - lastServerActivity <= SERVER_SILENCE_MS) return;
-    log('open-rc attach-orc: server silent — link presumed dead, reconnecting');
+    log('orc attach: server silent — link presumed dead, reconnecting');
     const dead = ws;
     ws = null;
     try {
@@ -572,7 +572,7 @@ export async function runAttachOrc(
     rejectFirstRegister?.(
       new Error(
         `registration with ${flags.server} did not complete within ` +
-          `${REGISTER_TIMEOUT_MS / 1000}s — is \`open-rc serve\` running?`,
+          `${REGISTER_TIMEOUT_MS / 1000}s — is \`orc serve\` running?`,
       ),
     );
     rejectFirstRegister = null;
@@ -590,9 +590,9 @@ export async function runAttachOrc(
   }
 
   const sessionUrl = sessionUrlFromAgent(flags.server, clientId);
-  log(`open-rc attach-orc: sharing session ${sessionId}`);
-  log(`open-rc attach-orc: transcript ${located.path}`);
-  log(`open-rc attach-orc: open ${sessionUrl}`);
+  log(`orc attach: sharing session ${sessionId}`);
+  log(`orc attach: transcript ${located.path}`);
+  log(`orc attach: open ${sessionUrl}`);
 
   return {
     clientId,

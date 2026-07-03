@@ -1,6 +1,6 @@
 /**
  * Filesystem contract between the transcript bridge (`open-rc
- * attach-orc`) and the Claude Code hook handlers (`open-rc hook …`).
+ * attach-orc`) and the Claude Code hook handlers (`orc hook …`).
  *
  * The two run as separate processes with no channel between them, so
  * they meet in a per-session state directory:

@@ -28,7 +28,7 @@ import {
   touchStopMarker,
   writeQuestion,
 } from '../src/attach/state.ts';
-import { type AttachOrcHandle, runAttachOrc } from '../src/cli/attach-orc.ts';
+import { type AttachOrcHandle, runAttachOrc } from '../src/cli/attach.ts';
 import { serve } from '../src/serve.ts';
 import { mungeCwd } from '../src/transcript/locate.ts';
 

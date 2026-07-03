@@ -1,7 +1,7 @@
 # Open Remote Control — Architecture
 
 > **Status:** design draft for Phase 7 (pure-relay pivot). The model is
-> frozen: `open-rc serve` is a pure WebSocket relay. It starts no
+> frozen: `orc serve` is a pure WebSocket relay. It starts no
 > processes and manages no `claude`; it does not even know `claude` is
 > a process. The user runs `claude` themselves and brings their own
 > bridge to a WebSocket.
@@ -66,17 +66,17 @@ The control plane has three roles. Only one of them is open-rc.
 ```mermaid
 flowchart LR
     browser["Browser (SPA)<br/>local, mobile, LAN, Tailscale,<br/>SSH tunnel, or VPS — your call"]
-    serve["open-rc serve<br/>(pure relay)"]
-    bridge["bridge<br/>attach-orc (transcript+hooks) or<br/>user-owned (pipes claude's stdio)"]
+    serve["orc serve<br/>(pure relay)"]
+    bridge["bridge<br/>orc attach (transcript+hooks) or<br/>user-owned (pipes claude's stdio)"]
     claude["claude<br/>(user's process)"]
     browser <-- "WS /ws" --> serve
     serve <-- "WS /agent" --> bridge
     bridge -. "reads transcript / owns stdio<br/>(user's side, never open-rc's)" .-> claude
 ```
 
-### 3.1 `open-rc serve` — the relay
+### 3.1 `orc serve` — the relay
 
-`open-rc serve` is a single Bun.serve process. It exposes:
+`orc serve` is a single Bun.serve process. It exposes:
 
 - `GET /` → SPA static files (`ui/index.html` and friends).
 - `GET /api/...` → JSON endpoints (health, push public key, push
@@ -158,7 +158,7 @@ claude --print --output-format stream-json --input-format stream-json --verbose
 ```
 
 The user is also responsible for whatever bridges that stream to a
-WebSocket connected to `open-rc serve`. Examples of bridges the user
+WebSocket connected to `orc serve`. Examples of bridges the user
 might write or use:
 
 - `websocat` — a CLI WebSocket tool. `claude --print … | websocat
@@ -197,7 +197,7 @@ Keeping process startup outside open-rc is deliberate:
   feeds it. Client-side, two helpers ship: `tui` (a `/ws` client that
   starts nothing) and `attach-orc` (a transcript bridge that starts
   nothing — it reads the JSONL the user's own session writes and
-  exchanges files with the `open-rc hook` handlers; see §3.5). Two
+  exchanges files with the `orc hook` handlers; see §3.5). Two
   earlier helpers that launched subprocesses — the spawning
   `attach-orc` and `attach-tmux` — were built and removed on
   2026-07-02; the same day's `/orc` goal was then implemented
@@ -219,7 +219,7 @@ flowchart LR
     subgraph back["viewers → session"]
         serve2["serve"] -- prompt --> ao2["attach-orc"]
         ao2 --> q["queue.ndjson<br/>~/.open-rc/attach/&lt;sessionId&gt;/"]
-        q -- "open-rc hook stop|prompt<br/>(Claude Code hooks)" --> sess["session"]
+        q -- "orc hook stop|prompt<br/>(Claude Code hooks)" --> sess["session"]
     end
 ```
 
@@ -240,7 +240,7 @@ Components:
   `queue.ndjson` prompts (rename-aside drain, crash-recoverable),
   `stop.marker` (Stop hook fired → bridge sends `done`), `end.marker`
   (SessionEnd → bridge unregisters and exits).
-- `src/cli/attach-hooks.ts` — `open-rc hook stop|prompt|end`. Stop
+- `src/cli/attach-hooks.ts` — `orc hook stop|prompt|end`. Stop
   drains the queue and blocks the stop with the messages as reason
   (that is how a browser prompt enters the session); while viewers are
   attached it lingers (default 45 s, `ORC_STOP_LINGER_MS`) so
@@ -257,7 +257,7 @@ nothing is lost; re-running `/orc` re-replays the transcript.
 ## 4. Wire protocols
 
 There is exactly one protocol boundary the server defines:
-browser ↔ `open-rc serve` on `/ws`. The other side of any client
+browser ↔ `orc serve` on `/ws`. The other side of any client
 WebSocket is the user's bridge and is opaque to the server.
 
 ### 4.1 `claude` subprocess ↔ user-owned bridge (loopback)
@@ -302,7 +302,7 @@ stdin).
 This format is **public** (Agent SDK wire format). Source:
 `https://docs.claude.com/en/docs/agent-sdk/overview`.
 
-### 4.2 User-owned bridge ↔ `open-rc serve` (opaque)
+### 4.2 User-owned bridge ↔ `orc serve` (opaque)
 
 The user's bridge opens a WebSocket to the server. The server does
 not care what protocol the bridge speaks on the client side — it
@@ -322,7 +322,7 @@ register, if the bridge speaks a `register` frame) and fanned out to
 attached browsers. That's it. The server does not validate or
 transform the payload.
 
-### 4.3 Browser ↔ `open-rc serve` (`/ws`)
+### 4.3 Browser ↔ `orc serve` (`/ws`)
 
 This is the protocol the server defines.
 
@@ -474,7 +474,7 @@ user's bridge reads it (if it implements resume).
 
 ## 6. Process management
 
-There is no process management in `open-rc serve`. This section is
+There is no process management in `orc serve`. This section is
 deliberately short.
 
 - The server starts no `claude`.
@@ -483,7 +483,7 @@ deliberately short.
 - The server does not know how to start, stop, restart, signal, or
   introspect any process.
 - The server's process table is whatever Bun started when the user
-  ran `open-rc serve`. That's it. Nothing else appears there.
+  ran `orc serve`. That's it. Nothing else appears there.
 
 If the user wants a `claude` running, they run it themselves. If the
 user wants it bridged to open-rc, they bridge it themselves. The
@@ -591,7 +591,7 @@ their own environment and runs their own `claude`. Done.
 
 ## 9. Open questions
 
-### 9.1 Should `open-rc serve` know what `stream-json` is?
+### 9.1 Should `orc serve` know what `stream-json` is?
 
 The cleanest answer is no — the server is byte-pass-through. The
 browser parses `stream-json`-shaped payloads because the user
@@ -654,9 +654,9 @@ wait for them to re-register.
 | Term                 | Meaning                                                            |
 | -------------------- | ------------------------------------------------------------------ |
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
-| **`open-rc serve`**  | The pure WS relay — the server half of open-rc (the CLI also ships `hub`, `tui`, `attach-orc`, `hook`). |
-| **Hub**              | `open-rc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | Whatever feeds `/agent`. First-party: `open-rc attach-orc`, a spawn-free transcript bridge for the session it is invoked from (§3.5). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
+| **`orc serve`**  | The pure WS relay — the server half of open-rc (the CLI also ships `hub`, `tui`, `attach-orc`, `hook`). |
+| **Hub**              | `orc hub` — public deployment accepting remote clients (unchanged from prior phases). |
+| **Bridge**           | Whatever feeds `/agent`. First-party: `orc attach`, a spawn-free transcript bridge for the session it is invoked from (§3.5). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |

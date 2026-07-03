@@ -149,7 +149,7 @@ Settings that govern RemoteControl behavior (visible as binary strings):
 
 There is also a separate `claude gateway` subcommand (Bun + Postgres
 backend) that syncs org-level policy from the cloud. `open-rc` does not
-need this — policy is whatever the operator of `open-rc hub` decides.
+need this — policy is whatever the operator of `orc hub` decides.
 
 ---
 

@@ -10,7 +10,7 @@
  *   tui         Terminal front-end for a relayed session. A plain
  *               `/ws` client (like the browser) — attaches to a
  *               clientId and renders/sends frames.
- *   attach-orc  Share the ALREADY-RUNNING Claude Code session of the
+ *   attach      Share the ALREADY-RUNNING Claude Code session of the
  *               current directory: replays + tails its transcript to
  *               `/agent` and queues browser prompts for the Claude
  *               Code hooks to deliver. Started in the background by
@@ -27,7 +27,7 @@
  */
 
 import { runHookCommand } from './cli/attach-hooks.ts';
-import { parseAttachOrcFlags, runAttachOrc } from './cli/attach-orc.ts';
+import { parseAttachOrcFlags, runAttachOrc } from './cli/attach.ts';
 import { parseFlags } from './cli/flags.ts';
 import { parseTuiFlags, runTui } from './cli/tui.ts';
 import { HubServer } from './hub/server.ts';
@@ -69,7 +69,7 @@ if (command === 'serve' || command === '') {
   const dim = tty ? '\x1b[90m' : '';
   const bold = tty ? '\x1b[1m' : '';
   const off = tty ? '\x1b[0m' : '';
-  console.log(`${amber}${bold}open-rc serve${off} ${dim}·${off} relay is up`);
+  console.log(`${amber}${bold}orc serve${off} ${dim}·${off} relay is up`);
   console.log(` ${amber}◉${off} ${dim}UI${off}      ${cyan}http://${host}:${port}/${off}`);
   console.log(
     ` ${amber}◉${off} ${dim}ws${off}      ${cyan}ws://${host}:${port}/ws${off}     ${dim}browsers / tui${off}`,
@@ -93,7 +93,7 @@ if (command === 'serve' || command === '') {
 
   const hub = new HubServer({ ...(dbPath ? { dbPath } : {}), autoApprove });
   await hub.start({ host, port });
-  console.log(`open-rc hub listening on http://${host}:${port}`);
+  console.log(`orc hub listening on http://${host}:${port}`);
   console.log(`Device WS: ws://${host}:${port}/device`);
   console.log(`Browser WS: ws://${host}:${port}/browser`);
   console.log(`Health: http://${host}:${port}/health`);
@@ -108,7 +108,7 @@ if (command === 'serve' || command === '') {
 } else if (command === 'tui') {
   const tuiFlags = parseTuiFlags(process.argv.slice(3));
   await runTui(tuiFlags);
-} else if (command === 'attach-orc') {
+} else if (command === 'attach') {
   const attachFlags = parseAttachOrcFlags(process.argv.slice(3));
   let handle: Awaited<ReturnType<typeof runAttachOrc>>;
   try {
@@ -116,7 +116,7 @@ if (command === 'serve' || command === '') {
       onExit: () => process.exit(0),
     });
   } catch (err) {
-    console.error(`open-rc attach-orc: ${err instanceof Error ? err.message : err}`);
+    console.error(`orc attach: ${err instanceof Error ? err.message : err}`);
     process.exit(1);
   }
   const shutdown = async () => {
@@ -131,6 +131,6 @@ if (command === 'serve' || command === '') {
   process.exit(await runHookCommand(event, stdinText));
 } else {
   console.error(`unknown command: ${command}`);
-  console.error('available commands: serve, hub, tui, attach-orc, hook');
+  console.error('available commands: serve, hub, tui, attach, hook');
   process.exit(2);
 }

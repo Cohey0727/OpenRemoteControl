@@ -16,7 +16,7 @@
  * other user hooks are preserved verbatim.
  *
  * Usage:
- *   bun run scripts/install-hooks.ts --bin ~/.local/bin/open-rc
+ *   bun run scripts/install-hooks.ts --bin ~/.local/bin/orc
  *   bun run scripts/install-hooks.ts --remove
  */
 
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   const flags = parseFlags(process.argv.slice(2));
   const remove = flags.remove === true;
   const home = homedir();
-  const bin = typeof flags.bin === 'string' ? flags.bin : join(home, '.local', 'bin', 'open-rc');
+  const bin = typeof flags.bin === 'string' ? flags.bin : join(home, '.local', 'bin', 'orc');
   const settingsPath =
     typeof flags.settings === 'string' ? flags.settings : join(home, '.claude', 'settings.json');
   const commandsDir =
