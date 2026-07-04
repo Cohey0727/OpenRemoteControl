@@ -1194,8 +1194,17 @@ function buildApp(): HTMLElement {
   effect(() => {
     ta.placeholder = connected() ? 'Send a message…' : 'Connecting…';
   });
+  // Auto-grow with content (Shift+Enter newlines): height follows
+  // scrollHeight up to the CSS max-height (10rem), then scrolls
+  // internally. Runs on every draft change, so sending (draft → '')
+  // snaps back to one line.
+  const autosize = (): void => {
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight + 2}px`;
+  };
   effect(() => {
     ta.value = draft();
+    autosize();
   });
 
   const sendBtn = h(
