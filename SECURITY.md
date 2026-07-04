@@ -123,7 +123,8 @@ issues.
 - [ ] Docker: keep the compose default `127.0.0.1:7322:7322`. Inside
       the container serve binds `0.0.0.0` (it has to), so the host
       port mapping IS the exposure decision — `-p 7322:7322` publishes
-      an unauthenticated relay to every interface. Front it with TLS +
+      the relay to every interface. Set ORC_USER/ORC_PASSWORD (the
+      built-in login gate) and front it with TLS +
       auth before widening. The `/data` volume holds the VAPID private
       key; treat it like the `~/.local/share/open-rc` dir.
 - [ ] Run hub behind a TLS-terminating reverse proxy that requires

@@ -11,6 +11,12 @@ services:
     container_name: open-rc
     ports:
       - '127.0.0.1:7322:7322'
+    environment:
+      # Optional login gate: set both (e.g. in a .env file next to this
+      # compose file) and the browser gets a sign-in page; bridges/tui
+      # authenticate with ORC_AUTH=user:password. Leave unset = open.
+      - ORC_USER=${ORC_USER:-}
+      - ORC_PASSWORD=${ORC_PASSWORD:-}
     volumes:
       # VAPID keys, push subscriptions, audit log (XDG_DATA_HOME=/data).
       - open-rc-data:/data

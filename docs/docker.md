@@ -88,7 +88,7 @@ is therefore the real exposure decision**:
 | Mapping | Meaning |
 | ------- | ------- |
 | `127.0.0.1:7322:7322` (default) | Loopback only — same trust model as bare `orc serve`. |
-| `7322:7322` | Every interface on the host. The relay has **no authentication**: anyone who can reach the port can read every shared session and type into it. Do this only behind TLS + auth (reverse proxy, Tailscale, VPN). See `SECURITY.md`. |
+| `7322:7322` | Every interface on the host. Only do this with the login gate armed (`ORC_USER`/`ORC_PASSWORD` in a `.env` next to the compose file) **and** TLS in front — without the gate, anyone who can reach the port can read every shared session and type into it. See `SECURITY.md`. |
 | `127.0.0.1:9000:7322` | Different host port; the container side stays 7322. |
 
 To use a different host port, change the left-hand side of the
@@ -187,7 +187,8 @@ server {
 4. From your machine: `export ORC_BASE_URL=https://orc.example.com`,
    then `/orc` inside claude. Browser/phone opens the domain.
 
-The relay has no authentication of its own — decide deliberately
+The relay ships an optional login gate (`ORC_USER`/`ORC_PASSWORD`;
+browsers sign in once, bridges/tui use `ORC_AUTH`) — decide deliberately
 whether the domain is reachable only via VPN/allowlist or gets an
 auth layer in the proxy (see `SECURITY.md`).
 

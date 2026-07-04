@@ -122,15 +122,15 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	  printf ' %s ' '$(DIM)(e.g. https://orc.example.com — empty = local 127.0.0.1:7322)$(OFF)$(AMBER)›$(OFF)'; \
 	  read -r URL || URL=''; \
 	fi; \
-	if [ -n "$$URL" ]; then \
-	  printf '%s\n' '#!/bin/sh' \
-	    ': "$${ORC_BASE_URL:='"$$URL"'}"' \
-	    'export ORC_BASE_URL' \
-	    'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/orc; \
-	  printf ' %s\n' '$(AMBER)◉$(OFF) $(DIM)relay$(OFF)     $(CYAN)'"$$URL"'$(OFF) $(DIM)(launcher default — env still wins)$(OFF)'; \
-	else \
-	  printf '%s\n' '#!/bin/sh' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"' > $(BIN_DIR)/orc; \
-	fi
+	AUTH='$(ORC_AUTH)'; \
+	{ printf '%s\n' '#!/bin/sh'; \
+	  [ -n "$$URL" ] && printf '%s\n' ': "$${ORC_BASE_URL:='"$$URL"'}"' 'export ORC_BASE_URL'; \
+	  [ -n "$$AUTH" ] && printf '%s\n' ': "$${ORC_AUTH:='"$$AUTH"'}"' 'export ORC_AUTH'; \
+	  printf '%s\n' 'exec bun run $(ROOT_DIR)/src/cli.ts "$$@"'; \
+	} > $(BIN_DIR)/orc; \
+	[ -n "$$URL" ] && printf ' %s\n' '$(AMBER)◉$(OFF) $(DIM)relay$(OFF)     $(CYAN)'"$$URL"'$(OFF) $(DIM)(launcher default — env still wins)$(OFF)'; \
+	[ -n "$$AUTH" ] && printf ' %s\n' '$(AMBER)◉$(OFF) $(DIM)auth$(OFF)      $(DIM)ORC_AUTH baked into the launcher$(OFF)'; \
+	true
 	@chmod +x $(BIN_DIR)/orc
 	@# Clean break (2026-07-03): the launcher is `orc` now. Drop the old
 	@# `open-rc` / `attach-orc` launchers and the superseded shell-init

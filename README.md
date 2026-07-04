@@ -67,7 +67,8 @@ One image carries the whole CLI (`serve` is the default command; `hub`
 and `tui` ride the same image via `docker run orc hub …`). Mutable
 state — VAPID keys, push subscriptions, the audit log — lives in the
 `/data` volume, so the container is disposable. The published port is
-bound to `127.0.0.1` by default because the relay has no auth; widen
+bound to `127.0.0.1` by default because the relay is open unless you
+set `ORC_USER`/`ORC_PASSWORD` (see [Authentication](#authentication)); widen
 it deliberately (see [`SECURITY.md`](./SECURITY.md)).
 
 The container never runs `claude` — it is the relay half only.
@@ -533,12 +534,31 @@ bring your own stdio bridge; the relay treats both identically.
 
 ## Authentication
 
+### Login gate (`ORC_USER` / `ORC_PASSWORD`)
+
+Set both environment variables on the relay and every browser visit
+goes through a sign-in page first:
+
+```bash
+ORC_USER=me ORC_PASSWORD='a long passphrase' orc serve
+# Docker: put the same two variables in a .env next to docker-compose.yml
+```
+
+Successful login sets an HttpOnly session cookie with no practical
+expiry (10 years — sessions are deliberately infinite; change the
+password to revoke every cookie at once). `orc attach` (the `/orc`
+bridge) and `orc tui` authenticate the same credentials with
+`ORC_AUTH=user:password` — export it, or bake it into the launcher
+with `make setup ORC_AUTH=…`. `/health` and the static PWA identity
+assets stay public; everything else — the SPA, `/ws`, `/agent`, the
+push API — requires the cookie or Basic credentials.
+
 ### Local-only mode (default)
 
-No auth. The server binds to `127.0.0.1`. Anyone with loopback
-access can read the sidebar and send prompts. The operator is the
-presumed audience. For LAN access, bind to `0.0.0.0` and put your
-own auth in front (reverse proxy with basic auth, Tailscale, etc.).
+With the variables unset there is no auth. The server binds to
+`127.0.0.1`; anyone with loopback access can read the sidebar and
+send prompts. For any wider exposure, set the login gate and put TLS
+in front (Basic credentials and cookies are plaintext otherwise).
 
 ### Hub mode
 

@@ -129,6 +129,17 @@ rebuilds the same UX against any provider by relaying the public
 - **Mobile.** Sidebar collapses; selecting a row slides the chat
   pane in from the right; a back button in the chat header slides
   the sidebar back in. No drawer, no toggle — sliding panes.
+- **Login gate** (2026-07-04). `ORC_USER`+`ORC_PASSWORD` on the
+  server arm a sign-in page (`/login`, plain form POST, no SPA/SW
+  dependency); the session cookie is a stateless HMAC of the
+  credentials (`src/auth/session.ts`) with a 10-year Max-Age —
+  infinite by request, survives restarts, revoked wholesale by
+  changing the password. `/ws` accepts the cookie; `/agent` and `tui`
+  accept `Authorization: Basic` from `ORC_AUTH=user:password`
+  (bakeable via `make setup ORC_AUTH=…`). Public without auth:
+  `/login`, `/health`, sw.js, manifest, icons. Unset = fully open as
+  before. Bare `USER` was deliberately NOT used (always set by
+  shells).
 - **Web Push** (already shipped, keep). When a session emits `done`,
   subscribed browsers get a notification with a snippet of the result.
 - **Hub mode** (already shipped, keep). Optional relay so multiple

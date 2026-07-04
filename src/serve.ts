@@ -24,6 +24,14 @@
 
 import { join, relative, resolve, sep } from 'node:path';
 import type { ServerWebSocket } from 'bun';
+import { loginPage } from './auth/login-page.ts';
+import {
+  authConfigFromEnv,
+  credentialsValid,
+  requestAuthed,
+  safeNextPath,
+  sessionCookie,
+} from './auth/session.ts';
 import { writeAudit } from './permission/audit.ts';
 import { notify } from './push/notifier.ts';
 import { PushStore } from './push/store.ts';
@@ -59,6 +67,9 @@ export interface ServeOptions {
   readonly vapidSubject?: string;
   /** Disable web-push entirely (skips key load, subscribe endpoints return 404). */
   readonly pushDisabled?: boolean;
+  /** Auth override: explicit config, or null to force-disable.
+   *  Default (undefined) reads ORC_USER / ORC_PASSWORD from the env. */
+  readonly auth?: { user: string; password: string } | null;
 }
 
 export async function serve(opts: ServeOptions): Promise<{
@@ -66,6 +77,19 @@ export async function serve(opts: ServeOptions): Promise<{
 }> {
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 7322;
+  const auth = opts.auth === undefined ? authConfigFromEnv() : opts.auth;
+
+  /** Paths reachable without a session: the login flow itself, the
+   *  health probe, and the static PWA identity assets (needed before
+   *  login and harmless — nothing sensitive lives in ui/). */
+  const isPublicPath = (pathname: string): boolean =>
+    pathname === '/login' ||
+    pathname === '/health' ||
+    pathname === '/sw.js' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/icon.svg' ||
+    pathname === '/apple-touch-icon.png' ||
+    /^\/icon-[a-z0-9-]+\.png$/.test(pathname);
 
   /* ----------------------------- push subsystem ------------------------- */
 
@@ -319,6 +343,57 @@ export async function serve(opts: ServeOptions): Promise<{
     port,
     async fetch(req, srv) {
       const url = new URL(req.url);
+
+      // ---------------- auth gate (only when ORC_USER/ORC_PASSWORD set) ---
+      if (auth && url.pathname === '/login') {
+        if (req.method === 'POST') {
+          let user = '';
+          let password = '';
+          let next = '/';
+          try {
+            const form = await req.formData();
+            user = String(form.get('user') ?? '');
+            password = String(form.get('password') ?? '');
+            next = safeNextPath(String(form.get('next') ?? '/'));
+          } catch {
+            return new Response('bad request', { status: 400 });
+          }
+          if (credentialsValid(auth, user, password)) {
+            return new Response(null, {
+              status: 303,
+              headers: { location: next, 'set-cookie': sessionCookie(auth) },
+            });
+          }
+          // Slow the brute-force loop a little; render the form again.
+          await new Promise((r) => setTimeout(r, 400));
+          return new Response(loginPage({ next, error: 'wrong user or password' }), {
+            status: 401,
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          });
+        }
+        if (requestAuthed(req, auth)) {
+          return new Response(null, { status: 302, headers: { location: '/' } });
+        }
+        return new Response(loginPage({ next: safeNextPath(url.searchParams.get('next')) }), {
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        });
+      }
+      if (auth && !isPublicPath(url.pathname) && !requestAuthed(req, auth)) {
+        // WebSockets and APIs get a clean 401 (their clients handle
+        // it); page navigations bounce through the login form.
+        if (
+          url.pathname === '/ws' ||
+          url.pathname === '/agent' ||
+          url.pathname.startsWith('/api/')
+        ) {
+          return new Response('authentication required', { status: 401 });
+        }
+        const next = encodeURIComponent(url.pathname + url.search);
+        return new Response(null, {
+          status: 302,
+          headers: { location: `/login?next=${next}` },
+        });
+      }
 
       if (url.pathname === '/ws') {
         const ok = srv.upgrade(req, {

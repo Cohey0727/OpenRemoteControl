@@ -16,6 +16,7 @@
 
 import { type Interface, createInterface } from 'node:readline';
 import { parseFlags } from './flags.ts';
+import { openWebSocket } from './ws-auth.ts';
 
 /* -------------------------------------------------------------------------- */
 /*  Flags                                                                      */
@@ -230,7 +231,7 @@ export async function runTui(flags: TuiFlags): Promise<void> {
 
   function connect(): void {
     if (stop) return;
-    const sock = new WebSocket(flags.server);
+    const sock = openWebSocket(flags.server);
     ws = sock;
     sock.addEventListener('open', () => {
       reconnectAttempt = 0;

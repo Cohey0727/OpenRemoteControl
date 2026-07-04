@@ -100,7 +100,8 @@ Fit: good. WS-friendly, persistent volume available, always-on.
   (default 60 s kills quiet WebSockets; it goes up to 4000 s).
   WebSocket upgrade works out of the box on ALB.
 - **Exposure**: security group / VPN / IP allowlist — the relay has
-  no auth.
+  no auth beyond the optional built-in login gate
+  (`ORC_USER`/`ORC_PASSWORD`).
 
 Task definition sketch:
 

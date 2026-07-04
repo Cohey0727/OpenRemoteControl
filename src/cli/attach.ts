@@ -57,6 +57,7 @@ import { type TailHandle, readAllLines, tailFile } from '../transcript/tail.ts';
 import { type TranscriptFrame, entryTimestamp, translateEntry } from '../transcript/translate.ts';
 import { activeLingerMs, lingerMs } from './attach-hooks.ts';
 import { parseFlags } from './flags.ts';
+import { openWebSocket } from './ws-auth.ts';
 
 /** Frames replayed to the server after (re)registration, at most. */
 const MAX_REPLAY_FRAMES = 600;
@@ -513,7 +514,7 @@ export async function runAttachOrc(
     if (stopped) return;
     let socket: WebSocket;
     try {
-      socket = new WebSocket(flags.server);
+      socket = openWebSocket(flags.server);
     } catch (err) {
       if (!registeredOnce) {
         rejectFirstRegister?.(err instanceof Error ? err : new Error(String(err)));
