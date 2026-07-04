@@ -8,7 +8,14 @@
     <meta name="theme-color" content="#f97316" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: light)" />
     <meta name="color-scheme" content="dark" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- App-like viewport: pinch zoom is intentionally disabled — the
+         transcript is a control surface, not a document, and accidental
+         zoom on mobile made panes drift. Wide content scrolls inside
+         its own block instead (pre/table overflow-x). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <!-- PWA install + home-screen integration. The manifest is the
          source of truth on Chromium/Firefox; the apple-* meta tags
          cover Safari (iOS Safari 16.4+ Web Push requires the page
@@ -390,6 +397,9 @@
       .chat-scroll {
         flex: 1;
         overflow-y: auto;
+        /* The pane itself NEVER scrolls sideways; wide content (pre,
+           tables) scrolls inside its own block instead. */
+        overflow-x: hidden;
         min-height: 0;
       }
       .chat {
@@ -468,7 +478,18 @@
         border-radius: var(--r-sm);
         border: 1px solid var(--hairline);
         background: var(--surface);
+        min-width: 0;
+        max-width: 100%;
       }
+      /* Long unbroken tokens (URLs, hashes, paths) wrap instead of
+         stretching the column. */
+      .msg .markdown, .msg .body { overflow-wrap: anywhere; }
+      .msg .markdown table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+      }
+      .msg pre { max-width: 100%; }
       .msg .role {
         font-family: var(--font-mono);
         font-size: 0.66rem;
