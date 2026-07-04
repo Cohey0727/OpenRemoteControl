@@ -124,16 +124,21 @@ async function hookDebug(record: Record<string, unknown>): Promise<void> {
   await appendFile(path, `${JSON.stringify({ t: Date.now(), ...record })}\n`).catch(() => {});
 }
 
+/** A single prompt passes through verbatim; only genuinely multiple
+ *  prompts get bullet points (a lone `- ` prefix leaked into how the
+ *  session displayed and read browser messages). */
+function formatPrompts(texts: readonly string[]): string {
+  return texts.length === 1 ? (texts[0] ?? '') : texts.map((t) => `- ${t}`).join('\n');
+}
+
 /** Format drained browser prompts as a Stop-hook block reason. */
 export function formatBlockReason(texts: readonly string[]): string {
-  const list = texts.map((t) => `- ${t}`).join('\n');
-  return `${OPENRC_MARKER} While this session is shared via open-rc, a user sent the following message(s) from an attached view (browser or tui). Treat them exactly as prompts typed into this session and respond now:\n\n${list}`;
+  return `${OPENRC_MARKER} While this session is shared via open-rc, a user sent the following message(s) from an attached view (browser or tui). Treat them exactly as prompts typed into this session and respond now:\n\n${formatPrompts(texts)}`;
 }
 
 /** Format drained browser prompts as UserPromptSubmit context. */
 export function formatPromptContext(texts: readonly string[]): string {
-  const list = texts.map((t) => `- ${t}`).join('\n');
-  return `${OPENRC_MARKER} Message(s) also arrived from the shared open-rc view (browser/tui) — address them together with the user's prompt:\n\n${list}`;
+  return `${OPENRC_MARKER} Message(s) also arrived from the shared open-rc view (browser/tui) — address them together with the user's prompt:\n\n${formatPrompts(texts)}`;
 }
 
 /**
@@ -231,10 +236,11 @@ const AskToolInput = z.looseObject({ questions: z.array(QuestionItem) });
 /** Render viewer answers as the deny reason Claude reads as the answer. */
 export function formatAnswerReason(answers: readonly unknown[]): string {
   const parsed = z.array(QuestionAnswer).safeParse(answers);
-  const lines = parsed.success
-    ? parsed.data.map((a) => `- ${a.header ?? a.question ?? 'answer'}: ${a.labels.join(', ')}`)
-    : [`- ${JSON.stringify(answers)}`];
-  return `${OPENRC_MARKER} The user answered this question from the shared open-rc view (browser/tui). These ARE the user's answers — accept them and continue; do NOT ask again:\n\n${lines.join('\n')}`;
+  const items = parsed.success
+    ? parsed.data.map((a) => `${a.header ?? a.question ?? 'answer'}: ${a.labels.join(', ')}`)
+    : [JSON.stringify(answers)];
+  const body = items.length === 1 ? (items[0] ?? '') : items.map((t) => `- ${t}`).join('\n');
+  return `${OPENRC_MARKER} The user answered this question from the shared open-rc view (browser/tui). These ARE the user's answers — accept them and continue; do NOT ask again:\n\n${body}`;
 }
 
 /**
