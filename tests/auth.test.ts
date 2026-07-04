@@ -110,7 +110,7 @@ describe('gated serve', () => {
     expect(await authed.text()).toContain('<!doctype html>');
   });
 
-  test('websockets: rejected bare, accepted with cookie (browser) or basic (bridge)', async () => {
+  test('websockets: /ws gated (cookie or basic), /agent open for bridges', async () => {
     const tryWs = (url: string, headers?: Record<string, string>) =>
       new Promise<boolean>((resolve) => {
         const ws = headers
@@ -132,17 +132,17 @@ describe('gated serve', () => {
       });
 
     expect(await tryWs(`ws://127.0.0.1:${PORT}/ws`)).toBe(false);
-    expect(await tryWs(`ws://127.0.0.1:${PORT}/agent`)).toBe(false);
 
     const cookie = sessionCookie(AUTH).split(';')[0] ?? '';
     expect(await tryWs(`ws://127.0.0.1:${PORT}/ws`, { cookie })).toBe(true);
+    // Basic credentials also work on /ws (that is how `tui` signs in).
     expect(
-      await tryWs(`ws://127.0.0.1:${PORT}/agent`, {
+      await tryWs(`ws://127.0.0.1:${PORT}/ws`, {
         authorization: basic(AUTH.user, AUTH.password),
       }),
     ).toBe(true);
-    expect(
-      await tryWs(`ws://127.0.0.1:${PORT}/agent`, { authorization: basic(AUTH.user, 'wrong') }),
-    ).toBe(false);
+    // /agent (bridge registration) is deliberately ungated even with
+    // auth armed — bridges connect with zero ceremony.
+    expect(await tryWs(`ws://127.0.0.1:${PORT}/agent`)).toBe(true);
   });
 });

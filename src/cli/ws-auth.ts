@@ -1,9 +1,10 @@
 /**
- * Basic-auth support for orc's WebSocket CLIENTS (`orc attach`,
- * `orc tui`) — required when the relay runs with ORC_USER /
- * ORC_PASSWORD set (see src/auth/session.ts). Browsers authenticate
- * through the /login cookie; terminal clients carry the same
- * credentials as an `Authorization: Basic …` header, sourced from
+ * Basic-auth support for orc's WebSocket CLIENTS. Needed only by
+ * `orc tui` (a `/ws` viewer) when the relay runs with ORC_USER /
+ * ORC_PASSWORD set — `/agent` is deliberately ungated, so `orc
+ * attach` works without credentials. Browsers authenticate through
+ * the /login cookie; `tui` carries the same credentials as an
+ * `Authorization: Basic …` header, sourced from
  * `ORC_AUTH=user:password` (bake it into the launcher via
  * `make setup ORC_AUTH=…`, or export it in the shell).
  * Unset, the handshake is exactly what it always was.

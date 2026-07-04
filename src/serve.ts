@@ -378,14 +378,20 @@ export async function serve(opts: ServeOptions): Promise<{
           headers: { 'content-type': 'text/html; charset=utf-8' },
         });
       }
-      if (auth && !isPublicPath(url.pathname) && !requestAuthed(req, auth)) {
+      // `/agent` (bridge registration) is deliberately NOT gated
+      // (owner's call, 2026-07-05): bridges run next to the user's own
+      // claude and should connect with zero ceremony. The exposure is
+      // limited to registering sessions — an /agent client can never
+      // read another session. Browsers, /ws, and the APIs stay gated.
+      if (
+        auth &&
+        url.pathname !== '/agent' &&
+        !isPublicPath(url.pathname) &&
+        !requestAuthed(req, auth)
+      ) {
         // WebSockets and APIs get a clean 401 (their clients handle
         // it); page navigations bounce through the login form.
-        if (
-          url.pathname === '/ws' ||
-          url.pathname === '/agent' ||
-          url.pathname.startsWith('/api/')
-        ) {
+        if (url.pathname === '/ws' || url.pathname.startsWith('/api/')) {
           return new Response('authentication required', { status: 401 });
         }
         const next = encodeURIComponent(url.pathname + url.search);

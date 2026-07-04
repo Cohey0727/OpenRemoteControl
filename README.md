@@ -546,12 +546,14 @@ ORC_USER=me ORC_PASSWORD='a long passphrase' orc serve
 
 Successful login sets an HttpOnly session cookie with no practical
 expiry (10 years — sessions are deliberately infinite; change the
-password to revoke every cookie at once). `orc attach` (the `/orc`
-bridge) and `orc tui` authenticate the same credentials with
-`ORC_AUTH=user:password` — export it, or bake it into the launcher
-with `make setup ORC_AUTH=…`. `/health` and the static PWA identity
-assets stay public; everything else — the SPA, `/ws`, `/agent`, the
-push API — requires the cookie or Basic credentials.
+password to revoke every cookie at once). The gate covers the VIEWER
+side only: the SPA, `/ws`, and the push API. **`/agent` (bridge
+registration) is deliberately ungated** — `/orc` and `orc attach`
+connect with zero configuration; a bridge can only ever register its
+own session, never read another. `orc tui` (a `/ws` viewer) signs in
+with `ORC_AUTH=user:password` — export it, or bake it in with
+`make setup ORC_AUTH=…`. `/health` and the static PWA identity assets
+stay public.
 
 ### Local-only mode (default)
 
