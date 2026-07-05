@@ -211,4 +211,34 @@ describe('shared session', () => {
     bridge.ws.close();
     await new Promise((r) => setTimeout(r, 50));
   });
+
+  test('attach replays only the most recent frames, not the whole buffer', async () => {
+    const bridge = await open(AGENT);
+    bridge.ws.send(
+      JSON.stringify({ type: 'register', label: 'deep', cwd: '/w', clientId: 'deep-1' }),
+    );
+    await bridge.waitFor((m) => m.type === 'registered');
+
+    // Fill the history buffer well past the replay cap (50).
+    for (let i = 0; i < 120; i++) {
+      bridge.ws.send(JSON.stringify({ type: 'text', text: `line-${i}` }));
+    }
+    // Sentinel so the late joiner can await the end of its replay.
+    bridge.ws.send(JSON.stringify({ type: 'done' }));
+
+    const late = await open(WS);
+    late.ws.send(JSON.stringify({ type: 'attach', clientId: 'deep-1' }));
+    await late.waitFor((m) => m.type === 'done');
+
+    const texts = late.msgs.filter((m) => m.type === 'text').map((m) => m.text);
+    // 49 texts + the done sentinel = the 50-frame replay window, and it
+    // is the TAIL of the conversation, not the head.
+    expect(texts).toHaveLength(49);
+    expect(texts[0]).toBe('line-71');
+    expect(texts[texts.length - 1]).toBe('line-119');
+
+    late.ws.close();
+    bridge.ws.close();
+    await new Promise((r) => setTimeout(r, 50));
+  });
 });

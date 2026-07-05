@@ -501,6 +501,12 @@ export async function runAttachOrc(
           // clears the marker), keeping attended terminals snappy.
           if (msg.count > 0) {
             void touchBrowserTurnMarker(dir).catch(() => {});
+            // `question` frames are transient (never in the server's
+            // replay buffer), so a viewer attaching while the ask hook
+            // is still waiting would see only the raw tool_use JSON.
+            // Reset the dedupe so the next marker poll re-relays the
+            // pending question; viewers dedupe by requestId.
+            lastQuestionId = null;
           }
         }
         return;

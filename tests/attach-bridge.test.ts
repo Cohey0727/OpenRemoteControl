@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import {
   attachDirFor,
   browserTurnMarkerExists,
+  clearQuestion,
   drainQueue,
   queueNonEmpty,
   readAnswer,
@@ -266,12 +267,23 @@ describe('question relay', () => {
     await until(async () => (await readAnswer(dir, 'q-e2e-1')) !== null);
     expect(await readAnswer(dir, 'q-e2e-1')).toEqual([{ question: 'Pick one', labels: ['B'] }]);
 
-    // Transient: a viewer attaching later must NOT get the question replayed.
+    // A question STILL PENDING (the ask hook hasn't cleared it) is
+    // re-relayed to a late attacher — the frame is transient, never in
+    // the server's replay buffer, so the bridge resends it on attach.
     const late = await open(WS);
     late.send({ type: 'attach', clientId: 'sess-question' });
-    await late.waitFor((m) => m.type === 'text');
-    expect(late.msgs.some((m) => m.type === 'question')).toBe(false);
+    const lateQ = await late.waitFor((m) => m.type === 'question');
+    expect(lateQ.requestId).toBe('q-e2e-1');
     late.close();
+
+    // Once the hook clears the question, later attachers get nothing.
+    await clearQuestion(dir);
+    const after = await open(WS);
+    after.send({ type: 'attach', clientId: 'sess-question' });
+    await after.waitFor((m) => m.type === 'text');
+    await new Promise((r) => setTimeout(r, 900)); // > one marker poll
+    expect(after.msgs.some((m) => m.type === 'question')).toBe(false);
+    after.close();
     browser.close();
     await bq.stop();
   });

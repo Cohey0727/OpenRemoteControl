@@ -44,6 +44,15 @@ import { type WsData, makeWsHandlers } from './ws.ts';
 const MAX_HISTORY = 800;
 
 /**
+ * Frames replayed to a just-attached viewer. Deliberately much smaller
+ * than MAX_HISTORY: replaying the full buffer made opening a session
+ * with a long history visibly slow (hundreds of frames rendered as
+ * markdown at once). ~50 recent frames is enough context to pick up a
+ * conversation; there is intentionally no pagination (2026-07-05).
+ */
+const REPLAY_FRAMES = 50;
+
+/**
  * Keepalive cadence. Idle WebSockets die at intermediary proxies
  * (Cloudflare: ~100 s), so the server generates traffic on every leg:
  * a JSON `ping` frame to bridges (they use it to detect half-open
@@ -303,7 +312,7 @@ export async function serve(opts: ServeOptions): Promise<{
     replayHistory(clientId, browser) {
       const conn = clients.get(clientId);
       if (!conn) return;
-      for (const frame of conn.history) {
+      for (const frame of conn.history.slice(-REPLAY_FRAMES)) {
         try {
           browser.send(JSON.stringify(frame));
         } catch {

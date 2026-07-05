@@ -672,13 +672,22 @@ function handleServer(msg: ServerBrowserMessage): void {
     case 'tool_result':
       appendFor(msg.clientId, { kind: 'tool_result', output: msg.output });
       break;
-    case 'question':
-      appendFor(msg.clientId, {
-        kind: 'question',
-        requestId: msg.requestId,
-        questions: msg.questions,
-      });
+    case 'question': {
+      // The bridge re-relays a still-pending question whenever a viewer
+      // attaches (the frame is transient, never replayed from history),
+      // so viewers that already hold this card must not render it twice.
+      const already = (messagesByClient()[msg.clientId] ?? []).some(
+        (m) => m.kind === 'question' && m.requestId === msg.requestId,
+      );
+      if (!already) {
+        appendFor(msg.clientId, {
+          kind: 'question',
+          requestId: msg.requestId,
+          questions: msg.questions,
+        });
+      }
       break;
+    }
     case 'permission_request':
       setPromptsByClient((prev) => ({
         ...prev,
@@ -857,6 +866,10 @@ function messageView(_cid: string, m: UiMessage): HTMLElement {
       return el;
     }
     case 'tool_use': {
+      if (m.tool === 'AskUserQuestion') {
+        const ask = askToolView(m.input);
+        if (ask) return ask;
+      }
       const el = h(
         'details',
         { class: 'msg tool_use' },
@@ -890,6 +903,58 @@ function messageView(_cid: string, m: UiMessage): HTMLElement {
         h('div', { class: 'body' }, m.text),
       );
   }
+}
+
+/**
+ * Readable rendering of the AskUserQuestion TOOL CALL that arrives via
+ * the transcript. This is display-only: the interactive card is a
+ * separate `question` frame relayed by the ask hook (browser-driven
+ * sessions only) — when the terminal owns the selector, or when the
+ * question was already answered, this collapsed view is all a viewer
+ * sees, and it must read as a question, not as raw JSON. Falls back to
+ * the generic JSON view (returns null) on any parse surprise.
+ */
+function askToolView(inputJson: string): HTMLElement | null {
+  let questions: QuestionItem[];
+  try {
+    const parsed = JSON.parse(inputJson) as { questions?: QuestionItem[] };
+    if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) return null;
+    questions = parsed.questions;
+  } catch {
+    return null;
+  }
+  const preview = questions[0]?.question ?? '';
+  const blocks = questions.map((q) =>
+    h(
+      'div',
+      { class: 'q-block' },
+      q.header ? h('div', { class: 'q-header' }, q.header) : null,
+      h('div', { class: 'q-text' }, q.question),
+      h(
+        'div',
+        { class: 'q-opts' },
+        q.options.map((opt) =>
+          h(
+            'div',
+            { class: 'q-opt ro' },
+            h('span', { class: 'q-opt-label' }, opt.label),
+            opt.description ? h('span', { class: 'q-opt-desc' }, opt.description) : null,
+          ),
+        ),
+      ),
+    ),
+  );
+  return h(
+    'details',
+    { class: 'msg tool_use ask' },
+    h(
+      'summary',
+      {},
+      h('span', { class: 'name' }, 'AskUserQuestion'),
+      h('span', { class: 'ask-preview' }, preview),
+    ),
+    h('div', { class: 'ask-body' }, blocks),
+  );
 }
 
 /**

@@ -750,6 +750,24 @@
         font-size: 0.78rem;
         color: var(--fg-subtle);
       }
+      /* Display-only view of the AskUserQuestion tool call (transcript
+         side): the question text previews in the collapsed summary, and
+         options render as inert rows, never as raw JSON. */
+      .msg.tool_use.ask .ask-preview {
+        color: var(--fg-subtle);
+        font-weight: 400;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+      }
+      .msg.tool_use.ask .ask-body {
+        font-family: var(--font-body);
+        font-size: 0.9rem;
+      }
+      .q-opt.ro { cursor: default; }
+      .q-opt.ro:hover { border-color: var(--hairline); }
 
       footer.composer {
         border-top: 1px solid var(--hairline);

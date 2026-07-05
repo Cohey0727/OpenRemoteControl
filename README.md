@@ -164,7 +164,11 @@ options appear as buttons in the browser (and as `/pick <n>` in
 `tui`); your click is returned to the session as the answer — the
 terminal selector never blocks a remotely-driven session. (Mechanism:
 a PreToolUse hook relays the question and returns the viewer's answer
-as the tool decision — verified against a live session.)
+as the tool decision — verified against a live session.) A question
+still waiting when you open or reload the page is re-relayed on
+attach, so it is never stranded; when the terminal owns the selector
+(CLI-driven sessions), the browser shows a readable, display-only
+view of the question instead of the raw tool JSON.
 
 Nothing is spawned anywhere in this path: no `claude` subprocess, no
 PTY, no tmux. The bridge only reads a file the session already writes
@@ -261,9 +265,10 @@ the original time.
 The browser reflects the session you're watching in the URL path —
 `http://127.0.0.1:7322/sessions/<clientId>` — so reloading, bookmarking,
 or sharing that link reopens the same session. On attach (a reload, or
-a second client joining), `serve` replays a bounded in-memory buffer of
-the recent conversation, so you see the history so far rather than a
-blank pane. That buffer is ephemeral: it lives only while the bridge is
+a second client joining), `serve` replays the most recent ~50 frames of
+a bounded in-memory buffer, so you see the recent conversation rather
+than a blank pane (no pagination — recent context only, by design).
+That buffer is ephemeral: it lives only while the bridge is
 connected and is never written to disk (restart `serve` and it rebuilds
 as new frames arrive). It is the live stream `serve` is already
 relaying — not a read of `claude`'s transcript files.

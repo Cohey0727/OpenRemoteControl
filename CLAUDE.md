@@ -214,9 +214,15 @@ rebuilds the same UX against any provider by relaying the public
   error plus echoed `user` prompts, NOT the transient
   `permission_request` and NOT streaming `text_delta` fragments (the
   final `text` frame carries the same content; replaying both would
-  render the reply twice) — and replays it to any browser/`tui` that
-  attaches, so a reload or a late joiner sees the conversation so far
-  instead of a blank pane. NOT disk persistence: the buffer is dropped
+  render the reply twice) — and replays the TAIL of it (cap
+  `REPLAY_FRAMES` = 50; full-buffer replay made opening a long session
+  visibly slow — capped 2026-07-05, deliberately NO pagination) to any
+  browser/`tui` that attaches, so a reload or a late joiner sees the
+  recent conversation instead of a blank pane. A PENDING AskUserQuestion
+  is the one exception to "transient frames are never re-seen": the
+  bridge re-relays it on every attach while the ask hook is still
+  waiting (viewers dedupe by requestId), so a reload never strands a
+  question. NOT disk persistence: the buffer is dropped
   when the bridge disconnects and is never written to disk. The SERVER
   never reads `claude`'s transcript files — deep history comes from the
   bridge side: `attach-orc` replays the session transcript (capped at

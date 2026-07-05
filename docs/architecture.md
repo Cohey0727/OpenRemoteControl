@@ -101,8 +101,10 @@ The server holds exactly one piece of mutable state:
 
 While a client is connected the server keeps a bounded, in-memory
 buffer of the conversation frames it relays for that client and
-replays it to any browser/`tui` that attaches — so a reload or a late
-joiner sees recent history, not a blank pane. This buffer is ephemeral:
+replays its tail (the most recent ~50 frames — replaying the whole
+buffer made opening a long session visibly slow; there is deliberately
+no pagination) to any browser/`tui` that attaches — so a reload or a
+late joiner sees recent history, not a blank pane. This buffer is ephemeral:
 it is dropped when the bridge disconnects and is never written to disk,
 so a server restart loses it (clients reconnect and it rebuilds as new
 frames arrive). It is the live stream the server is already relaying,
