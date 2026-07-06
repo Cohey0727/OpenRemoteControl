@@ -385,7 +385,6 @@ const [streamByClient, setStreamByClient] = signal<Record<string, string>>({});
 // requestId → answer summary, for questions answered from THIS view.
 // Read inside messageView so answered cards re-render disabled.
 const [answeredQuestions, setAnsweredQuestions] = signal<Record<string, string>>({});
-const [mobileView, setMobileView] = signal<'sidebar' | 'chat'>('sidebar');
 const [mobile, setMobile] = signal(isMobile());
 // Ticks every 15 s so relative "last activity" timestamps advance on
 // their own; rows read it to re-render without a full list rebuild.
@@ -493,33 +492,61 @@ function selectClient(clientId: string, opts: { replace?: boolean } = {}): void 
   const cur = activeId();
   if (cur === clientId) {
     syncUrl(clientId, opts.replace ?? false);
-    if (mobile()) setMobileView('chat');
     return;
   }
   if (cur) send({ type: 'detach', clientId: cur });
   setActiveId(clientId);
   sendAttach(clientId);
   syncUrl(clientId, opts.replace ?? false);
-  if (mobile()) setMobileView('chat');
 }
 
+/** Leave the active session: detach and drop the selection. The mobile
+ *  chat pane is DERIVED from `activeId` (see the body-class effect), so
+ *  this alone slides the sidebar back into view. Does not touch history —
+ *  the caller owns that: the back button unwinds a history entry, and
+ *  popstate already carries the browser's updated URL. */
+function deselect(): void {
+  const cur = activeId();
+  if (cur) send({ type: 'detach', clientId: cur });
+  setActiveId(null);
+  pendingSession = null;
+}
+
+/** Mobile in-app back button. Unwinds the history entry pushed when the
+ *  session was opened, so it behaves exactly like the browser's back
+ *  button and the URL, `activeId`, and the visible pane can never diverge
+ *  (the resulting popstate clears the selection). A deep-linked session
+ *  has a `/` entry seeded beneath it at load, so there is always somewhere
+ *  to return to. */
 function backToSidebar(): void {
-  setMobileView('sidebar');
+  if (sessionFromPath()) history.back();
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('popstate', () => {
     const id = sessionFromPath();
-    if (id) {
-      if (clients().some((c) => c.clientId === id)) selectClient(id, { replace: true });
-      else pendingSession = id;
+    if (!id) {
+      deselect();
+      return;
+    }
+    if (clients().some((c) => c.clientId === id)) {
+      selectClient(id, { replace: true });
     } else {
-      const cur = activeId();
-      if (cur) send({ type: 'detach', clientId: cur });
-      setActiveId(null);
-      pendingSession = null;
+      // The URL names a session we haven't seen yet: show the sidebar and
+      // attach once it appears (see clients_changed / client_registered).
+      deselect();
+      pendingSession = id;
     }
   });
+
+  // Seed a list entry beneath a deep-linked /sessions/:id so the back
+  // button — in-app or the browser's — returns to the sidebar instead of
+  // exiting the app. Runs once at load, before any navigation.
+  if (pendingSession) {
+    const deepPath = location.pathname;
+    history.replaceState({}, '', '/');
+    history.pushState({ clientId: pendingSession }, '', deepPath);
+  }
 }
 
 let reconnectAttempt = 0;
@@ -1508,8 +1535,11 @@ if (typeof document !== 'undefined') {
     if (!mobile()) {
       cls.remove('app-mobile-chat', 'app-mobile-sidebar');
     } else {
-      cls.toggle('app-mobile-chat', mobileView() === 'chat');
-      cls.toggle('app-mobile-sidebar', mobileView() === 'sidebar');
+      // The visible pane is derived from the selection — not a separate
+      // signal — so the URL, `activeId`, and the pane stay in lockstep.
+      const inChat = activeId() !== null;
+      cls.toggle('app-mobile-chat', inChat);
+      cls.toggle('app-mobile-sidebar', !inChat);
     }
   });
 }
