@@ -25,6 +25,9 @@ BIN_DIR ?= $(HOME)/.local/bin
 # REAL ~/.claude hooks to a throwaway path.
 CLAUDE_SETTINGS     ?= $(HOME)/.claude/settings.json
 CLAUDE_COMMANDS_DIR ?= $(HOME)/.claude/commands
+# User-scope MCP config — where setup registers the `orc` channel
+# server entry (research-preview Channels sharing, `orc channel`).
+CLAUDE_JSON         ?= $(HOME)/.claude.json
 
 # Legacy shell-init file (superseded by the PATH launchers); teardown
 # still removes it so upgraders aren't left with a stale source line.
@@ -142,16 +145,27 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	@# ~/.claude/settings.json + the /orc slash command symlink.
 	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --bin $(BIN_DIR)/orc \
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR)
+	@# Channels sharing (research preview): register `orc channel` as a
+	@# user-scope MCP server so `claude
+	@# --dangerously-load-development-channels server:orc` can spawn it.
+	@bun run $(ROOT_DIR)/scripts/install-channel.ts --bin $(BIN_DIR)/orc \
+	  --claude-json $(CLAUDE_JSON) || true
 	@printf '%s\n' \
 	  ' $(AMBER)◉$(OFF) $(DIM)on PATH$(OFF)   $(BIN_DIR)/orc' \
 	  ' $(AMBER)◉$(OFF) $(DIM)hooks$(OFF)     ~/.claude/settings.json $(DIM)(Stop / UserPromptSubmit / Notification / SessionEnd)$(OFF)' \
-	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/orc.md'
+	  ' $(AMBER)◉$(OFF) $(DIM)command$(OFF)   ~/.claude/commands/orc.md' \
+	  ' $(AMBER)◉$(OFF) $(DIM)channel$(OFF)   ~/.claude.json $(DIM)(mcpServers.orc — research-preview Channels sharing)$(OFF)'
 	@printf '%s\n' \
 	  '' \
 	  ' $(BOLD)share the session you are already in$(OFF)' \
 	  '   $(CYAN)orc serve$(OFF)      $(DIM)the relay + SPA$(OFF)' \
 	  '   $(CYAN)/orc$(OFF)           $(DIM)inside claude — mirror THIS session to the browser$(OFF)' \
 	  '   $(CYAN)orc tui$(OFF)        $(DIM)a terminal window onto a relayed session$(OFF)' \
+	  '' \
+	  ' $(BOLD)or share with instant delivery (Channels research preview)$(OFF)' \
+	  '   $(CYAN)claude --dangerously-load-development-channels server:orc$(OFF)' \
+	  '   $(DIM)start the session like this — browser messages then land instantly,$(OFF)' \
+	  '   $(DIM)even while it is idle, and permission prompts relay to the browser$(OFF)' \
 	  ''
 	@case ":$$PATH:" in \
 	  *":$(BIN_DIR):"*) ;; \
@@ -162,9 +176,11 @@ setup: logo relay-diagram ## Register the open-rc launcher, Claude Code hooks, a
 	esac
 
 .PHONY: teardown
-teardown: ## Remove the launcher, Claude Code hooks, and /orc command
+teardown: ## Remove the launcher, Claude Code hooks, /orc command, and channel entry
 	@bun run $(ROOT_DIR)/scripts/install-hooks.ts --remove \
 	  --settings $(CLAUDE_SETTINGS) --commands-dir $(CLAUDE_COMMANDS_DIR) || true
+	@bun run $(ROOT_DIR)/scripts/install-channel.ts --remove \
+	  --claude-json $(CLAUDE_JSON) || true
 	@rm -f $(BIN_DIR)/orc
 	@rm -f $(BIN_DIR)/orc
 	@rm -f $(BIN_DIR)/open-rc

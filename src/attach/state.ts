@@ -70,6 +70,7 @@ export async function createAttachDir(dir: string): Promise<void> {
     stopPath(dir),
     endPath(dir),
     browserTurnPath(dir),
+    channelPath(dir),
     questionPath(dir),
     // A stale attached count from a dead bridge would make the Stop
     // hook linger for viewers that are no longer there.
@@ -301,6 +302,20 @@ export async function readAnswer(dir: string, requestId: string): Promise<unknow
 export const clearAnswer = async (dir: string, requestId: string) => {
   await unlink(answerPath(dir, requestId)).catch(() => {});
 };
+
+/* ----------------------------- channel marker ----------------------------- */
+
+const channelPath = (dir: string) => join(dir, 'channel.marker');
+
+/** Present while the session is bridged by `orc channel` (an MCP
+ *  channel server claude itself spawned). Browser prompts then reach
+ *  the session as channel notifications — instantly, even while it is
+ *  idle — so the Stop hook must NOT linger polling the queue: the
+ *  queue is never written in channel mode, and any linger would only
+ *  capture the terminal for nothing. */
+export const touchChannelMarker = (dir: string) => touchMarker(channelPath(dir));
+export const channelMarkerExists = async (dir: string) =>
+  (await markerMtime(channelPath(dir))) !== null;
 
 /* ----------------------------- browser-turn marker ------------------------ */
 

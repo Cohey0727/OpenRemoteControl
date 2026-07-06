@@ -15,19 +15,27 @@
  *               `/agent` and queues browser prompts for the Claude
  *               Code hooks to deliver. Started in the background by
  *               the `/orc` slash command.
+ *   channel     The same sharing as an MCP CHANNEL server (research
+ *               preview): claude itself spawns this process when
+ *               started with `--dangerously-load-development-channels
+ *               server:orc`, and viewer prompts are pushed into the
+ *               session instantly — even while it is idle — plus
+ *               tool-permission dialogs relay to the browser.
  *   hook        Claude Code hook handlers (stop|prompt|notify|ask|end) —
  *               the queue-delivery half of attach-orc. Wired into
  *               `~/.claude/settings.json` by `make setup`.
  *
  * None of these launch a process. `serve`/`hub` are byte-pass-through
  * relays; `tui` is a WebSocket client; `attach-orc` reads the session
- * transcript the user's own `claude` writes; `hook` handlers exchange
- * files with the bridge. There is no child_process, PTY, or tmux
- * anywhere in open-rc.
+ * transcript the user's own `claude` writes; `channel` is spawned BY
+ * claude's MCP machinery and only speaks stdio + WebSocket; `hook`
+ * handlers exchange files with the bridge. There is no child_process,
+ * PTY, or tmux anywhere in open-rc.
  */
 
 import { runHookCommand } from './cli/attach-hooks.ts';
 import { parseAttachOrcFlags, runAttachOrc } from './cli/attach.ts';
+import { parseChannelFlags, runChannel } from './cli/channel.ts';
 import { parseFlags } from './cli/flags.ts';
 import { parseTuiFlags, runTui } from './cli/tui.ts';
 import { HubServer } from './hub/server.ts';
@@ -125,12 +133,24 @@ if (command === 'serve' || command === '') {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+} else if (command === 'channel') {
+  // stdout is the MCP transport here — never print to it.
+  const channelFlags = parseChannelFlags(process.argv.slice(3));
+  const handle = await runChannel(channelFlags, {
+    onExit: () => process.exit(0),
+  });
+  const shutdown = async () => {
+    await handle.stop();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 } else if (command === 'hook') {
   const event = process.argv[3] ?? '';
   const stdinText = await Bun.stdin.text();
   process.exit(await runHookCommand(event, stdinText));
 } else {
   console.error(`unknown command: ${command}`);
-  console.error('available commands: serve, hub, tui, attach, hook');
+  console.error('available commands: serve, hub, tui, attach, channel, hook');
   process.exit(2);
 }

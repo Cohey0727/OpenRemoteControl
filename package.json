@@ -44,6 +44,7 @@
     "bun": ">=1.1.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "web-push": "^3.6.7",
     "zod": "^4.4.3"
   }

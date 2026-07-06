@@ -9,7 +9,10 @@
  *
  *   Stop             fired at every turn end. The handler (a) touches
  *                    the stop marker so the bridge relays a `done`
- *                    frame, then (b) drains the queue. If prompts are
+ *                    frame, then — unless the session is bridged by
+ *                    `orc channel`, whose notifications deliver
+ *                    instantly and need no queue — (b) drains the
+ *                    queue. If prompts are
  *                    waiting it answers `{"decision":"block"}` with
  *                    the prompts as the reason — Claude Code continues
  *                    the turn and the session answers the browser.
@@ -39,6 +42,7 @@ import {
   attachedCountMtime,
   bridgeAlive,
   browserTurnMarkerExists,
+  channelMarkerExists,
   clearAnswer,
   clearBrowserTurnMarker,
   clearQuestion,
@@ -168,6 +172,15 @@ export async function runStopHook(
 
   // Turn ended — let the bridge close the turn for attached viewers.
   await touchStopMarker(dir);
+
+  // Channel mode: browser prompts reach the session as channel
+  // notifications the moment they are sent — even while it is idle.
+  // The queue is never written, so a linger would only capture the
+  // terminal for nothing. Marker touched, done frame owed — exit.
+  if (await channelMarkerExists(dir)) {
+    await hookDebug({ hook: 'stop', exit: 'channel-mode' });
+    return {};
+  }
 
   // Browser-driven conversations (a browser message was DELIVERED into
   // this session and no CLI prompt has been typed since) get the

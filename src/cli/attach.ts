@@ -21,6 +21,12 @@
  * frame). If hooks aren't installed the bridge still closes a turn
  * when the next `user` entry arrives — dividers are just deferred.
  *
+ * The same machinery also runs `orc channel` (opts.channel): there the
+ * viewers → session leg is an MCP channel notification pushed straight
+ * into the running session (instant, even while idle) instead of the
+ * queue file, and the transcript is discovered LAZILY — claude spawns
+ * the channel server before the session writes its first line.
+ *
  * Lifecycle:
  *   1. Resolve the transcript (newest JSONL of this project's cwd, or
  *      `--transcript`). The session id is the transcript basename and
@@ -48,11 +54,14 @@ import {
   readQuestion,
   removeAttachDir,
   stopMarkerMtime,
+  touchBrowserTurnMarker,
+  touchChannelMarker,
   writeAnswer,
   writeAttachedCount,
   writeBridgeInfo,
 } from '../attach/state.ts';
-import { resolveTranscript } from '../transcript/locate.ts';
+import { waitForNewTranscript } from '../channel/discover.ts';
+import { type LocatedTranscript, resolveTranscript } from '../transcript/locate.ts';
 import { type TailHandle, readAllLines, tailFile } from '../transcript/tail.ts';
 import { type TranscriptFrame, entryTimestamp, translateEntry } from '../transcript/translate.ts';
 import { lingerMs } from './attach-hooks.ts';
@@ -81,6 +90,10 @@ const MARKER_POLL_MS = 400;
  *  server keepalive-pings every 30 s; this allows several misses). */
 const SERVER_SILENCE_MS = 120_000;
 const WATCHDOG_POLL_MS = 15_000;
+/** Channel mode: how long an idle session may stay visibly silent
+ *  after a pushed prompt before viewers are warned that the channel
+ *  is probably not enabled (notifications are dropped silently). */
+const CHANNEL_DELIVERY_WARN_MS = 20_000;
 
 /* -------------------------------------------------------------------------- */
 /*  Flags                                                                      */
@@ -204,10 +217,31 @@ export function foldLines(lines: readonly string[]): { state: TurnState; out: Ou
 
 export interface AttachOrcHandle {
   readonly clientId: string;
-  readonly sessionId: string;
-  readonly transcriptPath: string;
+  /** Null in channel mode until the transcript is discovered. */
+  readonly sessionId: string | null;
+  readonly transcriptPath: string | null;
   readonly sessionUrl: string;
+  /** Send one raw frame to the server (silently dropped while the
+   *  link is down). Channel mode relays `permission_request` this way. */
+  readonly send: (frame: Record<string, unknown>) => void;
   stop(): Promise<void>;
+}
+
+/**
+ * Channel-mode hooks (`orc channel`). The bridge machinery is shared
+ * with `orc attach`; what changes is the two injection points:
+ * transcript discovery is LAZY (claude spawns the channel before the
+ * session writes its first transcript line), and viewer prompts are
+ * pushed straight into the session as MCP channel notifications
+ * instead of the queue file the Stop/UserPromptSubmit hooks drain.
+ */
+export interface ChannelModeHooks {
+  /** Deliver one viewer prompt into the session (channel notification). */
+  readonly onPrompt: (text: string) => Promise<void>;
+  /** Relay a viewer's permission verdict (permission relay). */
+  readonly onPermissionResponse?: (requestId: string, approved: boolean) => Promise<void>;
+  /** Transcript-discovery poll cadence override (tests). */
+  readonly discoverPollMs?: number;
 }
 
 export interface AttachOrcOptions {
@@ -221,6 +255,8 @@ export interface AttachOrcOptions {
   readonly onExit?: () => void;
   /** Post-replay quiet-close fuse override (tests). */
   readonly quietTurnMs?: number;
+  /** Present = run as `orc channel` bridge (see ChannelModeHooks). */
+  readonly channel?: ChannelModeHooks;
 }
 
 export async function runAttachOrc(
@@ -228,26 +264,28 @@ export async function runAttachOrc(
   opts: AttachOrcOptions = {},
 ): Promise<AttachOrcHandle> {
   const log = opts.log ?? ((line: string) => console.error(line));
+  const channel = opts.channel;
+  const startedAt = Date.now();
+  const tag = channel ? 'orc channel' : 'orc attach';
 
-  const located = await resolveTranscript({
-    ...(flags.transcript !== undefined ? { transcript: flags.transcript } : {}),
-    cwd: flags.cwd,
-    ...(opts.claudeHome !== undefined ? { claudeHome: opts.claudeHome } : {}),
-  });
-  const sessionId = located.sessionId;
-  const clientId = flags.clientId ?? sessionId;
-  const dir = attachDirFor(sessionId, opts.attachBaseDir);
+  /** Resolved transcript. Channel mode starts with null: claude spawns
+   *  the channel MCP server BEFORE the session writes its first
+   *  transcript line, so discovery runs in the background instead. */
+  let located: LocatedTranscript | null = null;
+  /** Attach state dir (the hooks rendezvous). Follows `located`. */
+  let dir: string | null = null;
 
-  await createAttachDir(dir);
-  await writeBridgeInfo(dir, { clientId, server: flags.server, startedAt: Date.now() });
-  // Deliberately NOT browser-driven yet: marking the session
-  // browser-driven at bridge start made the /orc turn's own Stop hook
-  // linger without a deadline, and the terminal user's typed prompts
-  // queued behind it — claude appeared to hang the moment orc started
-  // (2026-07-06). Browser-driven mode now begins only when a browser
-  // message is actually DELIVERED (the Stop hook touches the marker);
-  // until then the hooks use the finite window, refreshed by viewer
-  // attach events.
+  if (!channel) {
+    located = await resolveTranscript({
+      ...(flags.transcript !== undefined ? { transcript: flags.transcript } : {}),
+      cwd: flags.cwd,
+      ...(opts.claudeHome !== undefined ? { claudeHome: opts.claudeHome } : {}),
+    });
+  }
+  const clientId = flags.clientId ?? located?.sessionId;
+  if (clientId === undefined) {
+    throw new Error('channel mode requires an explicit clientId');
+  }
 
   let ws: WebSocket | null = null;
   let tail: TailHandle | null = null;
@@ -256,7 +294,35 @@ export async function runAttachOrc(
   let turn: TurnState = { turnOpen: false, lastTs: null };
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let doneTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastStopMtime = await stopMarkerMtime(dir);
+  let lastStopMtime: number | null = null;
+
+  /** Bind the bridge to its transcript: create the state dir the
+   *  hooks rendezvous in, remember the stop-marker baseline. Attach
+   *  mode runs this up front; channel mode when discovery finds the
+   *  file the spawning session started writing. */
+  const adoptTranscript = async (found: LocatedTranscript): Promise<void> => {
+    located = found;
+    const d = attachDirFor(found.sessionId, opts.attachBaseDir);
+    dir = d;
+    await createAttachDir(d);
+    await writeBridgeInfo(d, { clientId, server: flags.server, startedAt: Date.now() });
+    // Channel mode leaves a marker so the Stop hook knows delivery is
+    // the channel's job and exits without lingering (no queue to poll,
+    // no terminal capture).
+    if (channel) await touchChannelMarker(d);
+    lastStopMtime = await stopMarkerMtime(d);
+  };
+
+  if (located) await adoptTranscript(located);
+  // Deliberately NOT browser-driven yet: marking the session
+  // browser-driven at bridge start made the /orc turn's own Stop hook
+  // linger without a deadline, and the terminal user's typed prompts
+  // queued behind it — claude appeared to hang the moment orc started
+  // (2026-07-06). Browser-driven mode now begins only when a browser
+  // message is actually DELIVERED (the Stop hook touches the marker;
+  // in channel mode, the `<channel>` event observed in the transcript);
+  // until then the hooks use the finite window, refreshed by viewer
+  // attach events.
   /** requestId of the last `question` frame relayed (dedupe). */
   let lastQuestionId: string | null = null;
   /** When the attached count last went 0 → >0 (null while nobody is
@@ -290,8 +356,10 @@ export async function runAttachOrc(
 
   /** Replay history and start (or restart) the live tail. */
   const startStreaming = async (): Promise<void> => {
+    const loc = located;
+    if (!loc) return;
     tail?.stop();
-    const { lines, offset } = await readAllLines(located.path);
+    const { lines, offset } = await readAllLines(loc.path);
     const folded = foldLines(lines);
     turn = folded.state;
     emit(folded.out.slice(-MAX_REPLAY_FRAMES));
@@ -304,11 +372,19 @@ export async function runAttachOrc(
     justReplayed = true;
     lastEmitAt = Date.now();
 
-    tail = tailFile(located.path, {
+    tail = tailFile(loc.path, {
       fromOffset: offset,
       onLine: (line) => {
         justReplayed = false;
         if (line.includes('"stop_hook_summary"')) verifyHooksRan();
+        // Channel mode: a `<channel>` event landing in the transcript
+        // is CONFIRMED delivery of a viewer prompt — the session is
+        // remote-driven now, so flip browser-driven mode (it routes
+        // AskUserQuestion to the viewers instead of the terminal
+        // selector; a prompt typed in the terminal clears it again).
+        if (channel && dir && line.includes('"type":"user"') && line.includes('<channel source=')) {
+          void touchBrowserTurnMarker(dir).catch(() => {});
+        }
         const step = foldLine(turn, line);
         turn = step.state;
         emit(step.out);
@@ -317,6 +393,18 @@ export async function runAttachOrc(
         // transcript briefly unreadable (writer mid-rename); next poll retries
       },
     });
+  };
+
+  /** Start streaming exactly once per (socket, transcript) pair —
+   *  `registered` and late transcript discovery race in channel mode,
+   *  and a double start would replay history twice. */
+  let streamStartedFor: WebSocket | null = null;
+  const maybeStartStreaming = (): void => {
+    if (!located || !registeredOnce || stopped) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (streamStartedFor === ws) return;
+    streamStartedFor = ws;
+    void startStreaming();
   };
 
   /** Close a turn the transcript will never close for us: right after
@@ -332,13 +420,16 @@ export async function runAttachOrc(
     setTimeout(() => {
       void (async () => {
         if (hookWarningSent || stopped) return;
-        const m = await stopMarkerMtime(dir);
+        const d = dir;
+        if (!d) return;
+        const m = await stopMarkerMtime(d);
         if (m !== null && Date.now() - m < 15_000) return; // our hook ran
         hookWarningSent = true;
         send({
           type: 'error',
-          message:
-            'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
+          message: channel
+            ? 'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — turn dividers and question relay are degraded. Browser→session delivery still works over the channel.'
+            : 'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
         });
       })();
     }, 5_000);
@@ -361,16 +452,18 @@ export async function runAttachOrc(
    */
   let lastIdleNoticeAt = 0;
   const notifyIfNoListener = async (): Promise<void> => {
+    const d = dir;
+    if (!d) return;
     if (turn.turnOpen) return; // a turn is running; delivery comes at its end
     // Browser-driven sessions keep an unlimited Stop-hook linger alive
     // after every turn — always listening, no notice needed.
-    if (await browserTurnMarkerExists(dir)) return;
+    if (await browserTurnMarkerExists(d)) return;
     // CLI mode: a Stop hook can only still be lingering if viewers were
     // already attached when the turn ended (it exits instantly at zero
     // viewers), and then only for the finite window, counted from the
     // later of the turn end and the last attach/detach event.
-    const stopM = await stopMarkerMtime(dir);
-    const attachedM = await attachedCountMtime(dir);
+    const stopM = await stopMarkerMtime(d);
+    const attachedM = await attachedCountMtime(d);
     const hookSurvivedTurnEnd =
       stopM !== null && attachedSince !== null && attachedSince <= stopM + 2_000;
     const deadline = stopM === null ? 0 : Math.max(stopM, attachedM ?? 0) + lingerMs();
@@ -383,6 +476,46 @@ export async function runAttachOrc(
       message:
         'message queued — the session is idle right now; it will be delivered the next time the session wakes (its next turn, a prompt typed in its terminal, or the start of a new listening window).',
     });
+  };
+
+  /** Channel mode: a `notifications/claude/channel` write is
+   *  fire-and-forget — if channels aren't enabled for the session
+   *  (missing `--dangerously-load-development-channels server:orc`,
+   *  org policy off) the event is dropped with NO error back to us.
+   *  So after pushing into an idle session, watch for any transcript
+   *  reaction; visible silence gets an honest `error` frame instead
+   *  of leaving the sender staring at nothing (Issue #11 P5). */
+  let channelWarnedAt = 0;
+  const armChannelDeliveryWatch = (sentAt: number): void => {
+    if (turn.turnOpen) return; // busy sessions queue events in-session; normal
+    setTimeout(() => {
+      if (stopped || turn.turnOpen || lastEmitAt > sentAt) return;
+      if (Date.now() - channelWarnedAt < 60_000) return;
+      channelWarnedAt = Date.now();
+      send({
+        type: 'error',
+        message:
+          'the message was pushed to the session channel but the session has not reacted — make sure claude was started with `--dangerously-load-development-channels server:orc` (channel events are dropped silently when the channel is not enabled).',
+      });
+    }, CHANNEL_DELIVERY_WARN_MS);
+  };
+
+  /** Channel mode: push one viewer prompt straight into the session.
+   *  This replaces the queue file + Stop-hook window entirely — the
+   *  notification reaches the session even while it is idle. */
+  const deliverViaChannel = (text: string): void => {
+    if (!channel) return;
+    const sentAt = Date.now();
+    void channel
+      .onPrompt(text)
+      .then(() => armChannelDeliveryWatch(sentAt))
+      .catch((err) => {
+        log(`${tag}: failed to push prompt into the session: ${err}`);
+        send({
+          type: 'error',
+          message: 'failed to push the message into the session over the channel.',
+        });
+      });
   };
 
   const closeTurnFromStopMarker = (): void => {
@@ -401,7 +534,7 @@ export async function runAttachOrc(
   const shutdown = async (reason: string): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    log(`orc attach: shutting down (${reason})`);
+    log(`${tag}: shutting down (${reason})`);
     clearInterval(heartbeat);
     clearInterval(markerPoll);
     clearInterval(watchdog);
@@ -416,11 +549,13 @@ export async function runAttachOrc(
     } catch {
       // already closed
     }
-    await removeAttachDir(dir);
+    if (dir) await removeAttachDir(dir);
   };
 
   const heartbeat = setInterval(() => {
-    void writeBridgeInfo(dir, { clientId, server: flags.server, startedAt: Date.now() }).catch(
+    const d = dir;
+    if (!d) return; // channel mode before transcript discovery
+    void writeBridgeInfo(d, { clientId, server: flags.server, startedAt: Date.now() }).catch(
       () => {},
     );
   }, HEARTBEAT_INTERVAL_MS);
@@ -428,19 +563,21 @@ export async function runAttachOrc(
   const markerPoll = setInterval(() => {
     void (async () => {
       if (stopped) return;
-      if (await endMarkerExists(dir)) {
+      const d = dir;
+      if (!d) return; // channel mode before transcript discovery
+      if (await endMarkerExists(d)) {
         await shutdown('session ended');
         opts.onExit?.();
         return;
       }
-      const mtime = await stopMarkerMtime(dir);
+      const mtime = await stopMarkerMtime(d);
       if (mtime !== null && mtime !== lastStopMtime) {
         lastStopMtime = mtime;
         closeTurnFromStopMarker();
       }
       // The `ask` hook parked a live AskUserQuestion — relay it to
       // every viewer so the choice can be answered remotely.
-      const q = await readQuestion(dir);
+      const q = await readQuestion(d);
       if (q && q.requestId !== lastQuestionId) {
         lastQuestionId = q.requestId;
         send({ type: 'question', requestId: q.requestId, questions: q.questions });
@@ -476,7 +613,7 @@ export async function runAttachOrc(
         registeredOnce = true;
         resolveFirstRegister?.();
         resolveFirstRegister = null;
-        void startStreaming();
+        maybeStartStreaming();
         return;
       }
       case 'error': {
@@ -485,30 +622,54 @@ export async function runAttachOrc(
           rejectFirstRegister?.(new Error(message));
           rejectFirstRegister = null;
         } else {
-          log(`orc attach: server error: ${message}`);
+          log(`${tag}: server error: ${message}`);
         }
         return;
       }
       case 'prompt': {
         if (typeof msg.text === 'string' && msg.text !== '') {
-          void appendQueue(dir, msg.text)
+          if (channel) {
+            deliverViaChannel(msg.text);
+            return;
+          }
+          const d = dir;
+          if (!d) return;
+          void appendQueue(d, msg.text)
             .then(() => notifyIfNoListener())
             .catch((err) => {
-              log(`orc attach: failed to queue prompt: ${err}`);
+              log(`${tag}: failed to queue prompt: ${err}`);
             });
         }
         return;
       }
       case 'question_response': {
+        const d = dir;
+        if (!d) return;
         if (typeof msg.requestId === 'string' && Array.isArray(msg.answers)) {
-          void writeAnswer(dir, msg.requestId, msg.answers).catch((err) => {
-            log(`orc attach: failed to record answer: ${err}`);
+          void writeAnswer(d, msg.requestId, msg.answers).catch((err) => {
+            log(`${tag}: failed to record answer: ${err}`);
+          });
+        }
+        return;
+      }
+      case 'permission_response': {
+        // Channel mode relays the viewer's verdict back into Claude
+        // Code's permission dialog (permission relay). Attach mode has
+        // no in-session dialog to answer — ignored, as before.
+        if (
+          channel?.onPermissionResponse &&
+          typeof msg.requestId === 'string' &&
+          typeof msg.approved === 'boolean'
+        ) {
+          void channel.onPermissionResponse(msg.requestId, msg.approved).catch((err) => {
+            log(`${tag}: failed to relay permission verdict: ${err}`);
           });
         }
         return;
       }
       case 'attached': {
-        if (typeof msg.count === 'number') {
+        if (typeof msg.count === 'number' && dir !== null) {
+          const d = dir;
           // Writing the count also refreshes attached.json's mtime,
           // which the Stop hook uses to extend its finite listening
           // window — a viewer who just opened the page gets a full
@@ -517,7 +678,7 @@ export async function runAttachOrc(
           // attended terminals (typed prompts queue behind a running
           // Stop hook) and hung claude right after /orc (2026-07-06);
           // only an actual delivery flips it.
-          void writeAttachedCount(dir, msg.count).catch(() => {});
+          void writeAttachedCount(d, msg.count).catch(() => {});
           if (msg.count > 0) {
             attachedSince ??= Date.now();
             // `question` frames are transient (never in the server's
@@ -533,7 +694,7 @@ export async function runAttachOrc(
         return;
       }
       default:
-        return; // permission_response and future frames: ignored in v1
+        return; // future frames: ignored
     }
   };
 
@@ -608,6 +769,27 @@ export async function runAttachOrc(
 
   connect();
 
+  // Channel mode: discover the spawning session's transcript in the
+  // background — the first `*.jsonl` of this cwd written after we
+  // started. Prompts and permission relay work from registration on;
+  // streaming (history + live tail) begins the moment the file exists.
+  if (channel) {
+    void (async () => {
+      const found = await waitForNewTranscript({
+        cwd: flags.cwd,
+        sinceMs: startedAt,
+        ...(opts.claudeHome !== undefined ? { claudeHome: opts.claudeHome } : {}),
+        ...(channel.discoverPollMs !== undefined ? { pollMs: channel.discoverPollMs } : {}),
+        cancelled: () => stopped,
+      });
+      if (!found || stopped) return;
+      await adoptTranscript(found);
+      log(`${tag}: adopted session ${found.sessionId}`);
+      log(`${tag}: transcript ${found.path}`);
+      maybeStartStreaming();
+    })();
+  }
+
   try {
     await firstRegistration;
   } catch (err) {
@@ -618,15 +800,25 @@ export async function runAttachOrc(
   }
 
   const sessionUrl = sessionUrlFromAgent(flags.server, clientId);
-  log(`orc attach: sharing session ${sessionId}`);
-  log(`orc attach: transcript ${located.path}`);
-  log(`orc attach: open ${sessionUrl}`);
+  const loc = located as LocatedTranscript | null;
+  if (loc) {
+    log(`${tag}: sharing session ${loc.sessionId}`);
+    log(`${tag}: transcript ${loc.path}`);
+  } else {
+    log(`${tag}: registered as ${clientId}; waiting for the session's transcript to appear`);
+  }
+  log(`${tag}: open ${sessionUrl}`);
 
   return {
     clientId,
-    sessionId,
-    transcriptPath: located.path,
+    get sessionId() {
+      return located?.sessionId ?? null;
+    },
+    get transcriptPath() {
+      return located?.path ?? null;
+    },
     sessionUrl,
+    send,
     stop: () => shutdown('stopped'),
   };
 }
