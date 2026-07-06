@@ -54,9 +54,12 @@ themselves and brings their own bridge. See
 - Binds `127.0.0.1:7322` (configurable via `--port`).
 - Bun.serve hosting the SPA + WebSocket on `/ws` (browsers) and
   `/agent` (user-owned bridges).
-- SPA = vanilla TypeScript with a small signal implementation,
-  served via `Bun.Transpiler` for `.ts` files (no UI build step).
-  The one render dep (`marked`) is vendored locally; no CDN.
+- SPA = React 18 + TypeScript + wouter, built by Vite into `ui/dist`
+  and hosted off disk by `orc serve` (SPA fallback for `/` and
+  `/sessions/*`, hashed `/assets/*` with an immutable cache). The one
+  render dep (`marked`) is a normal npm dependency; no CDN. (This phase
+  originally shipped as a hand-rolled vanilla-TS SPA; it was migrated to
+  React + Vite when the hand-rolled router/signal state kept diverging.)
 
 **Definition of done — ✓ met.**
 
@@ -225,7 +228,8 @@ belongs.
 - **Update `Makefile`.** Remove any `make attach` or
   `make client` target. The Makefile should expose only
   `make start` (= serve) and the usual dev/test targets.
-- **Update `ui/app.ts`.** Remove the `+ New session` button and
+- **Update the SPA sidebar** (then `ui/app.ts`; today `ui/src/components/Sidebar.tsx`).
+  Remove the `+ New session` button and
   the `× Remove` button from the sidebar. The sidebar shows what
   bridges are currently connected; clicking a row attaches the
   chat pane to that bridge's stream. There is no
@@ -415,10 +419,12 @@ always `/`), and attaching showed a blank pane until the next frame.
 
 - **Path routing.** The browser reflects the active session in the URL
   path — `/sessions/<clientId>` via `history.pushState` — with
-  `popstate` handling and boot-from-path, so a reload or shared link
-  deep-links back. `serve` gained an SPA fallback for `/sessions/*`;
-  SPA assets moved to root-absolute paths (`/app.ts`, `/vendor/…`) so
-  they resolve under a session subpath.
+  boot-from-path, so a reload or shared link deep-links back. `serve`
+  gained an SPA fallback for `/sessions/*`; SPA assets resolve from
+  root-absolute paths so they load under a session subpath. (Routing is
+  now wouter and assets are Vite's content-hashed `/assets/*` bundles;
+  this originally used `history.pushState`/`popstate` with root-absolute
+  `/app.ts` + `/vendor/…` before the React + Vite migration.)
 - **History-on-attach.** `serve` keeps a bounded in-memory buffer
   (`BridgeConn.history`, cap `MAX_HISTORY`) of each connected client's
   relayed conversation frames + echoed `user` prompts (not the

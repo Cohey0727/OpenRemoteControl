@@ -36,7 +36,9 @@ interface Target {
 }
 
 const projectRoot = new URL('..', import.meta.url).pathname;
-const uiDir = join(projectRoot, 'ui');
+// Static PWA assets live in ui/public/ (Vite copies them verbatim into
+// ui/dist/). icon.svg is the source of truth; the PNGs sit beside it.
+const uiDir = join(projectRoot, 'ui', 'public');
 const svgPath = join(uiDir, 'icon.svg');
 
 const TARGETS: Target[] = [

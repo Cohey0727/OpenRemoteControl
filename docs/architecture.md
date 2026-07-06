@@ -131,8 +131,10 @@ The browser never creates clients. The browser never kills clients.
 The browser never sends SIGTERM to anything. It is a UI.
 
 **Offline posture (Phase 8.1).** The SPA is installable as a PWA.
-The app shell (`/`, `/app.ts`, the vendored `marked`, the icons, the
-manifest) is precached by the service worker; navigation runs
+The app shell (`dist/index.html` served at `/` and `/sessions/*`, the
+content-hashed `/assets/*.js` + `/assets/*.css` Vite bundles, and the
+`public/` assets — icons and manifest) is precached by the service
+worker; navigation runs
 NetworkFirst with a precache fallback. When the relay is unreachable
 the shell still loads and the most recently attached client's cached
 transcript remains visible — but the composer is disabled because

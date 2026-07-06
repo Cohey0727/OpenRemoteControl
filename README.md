@@ -63,8 +63,12 @@ docker build -t open-rc .
 docker run -d -p 127.0.0.1:7322:7322 -v open-rc-data:/data open-rc
 ```
 
-One image carries the whole CLI (`serve` is the default command; `hub`
-and `tui` ride the same image via `docker run orc hub …`). Mutable
+Docker is the recommended way to run the relay. One image carries the
+whole CLI (`serve` is the default command; `hub` and `tui` ride the same
+image via `docker run orc hub …`). The image is multi-stage: a first
+stage runs `bun run build:ui` to build the React/Vite SPA into `ui/dist`,
+and the runtime stage serves it alongside the TypeScript server source.
+Mutable
 state — VAPID keys, push subscriptions, the audit log — lives in the
 `/data` volume, so the container is disposable. The published port is
 bound to `127.0.0.1` by default because the relay is open unless you
@@ -513,25 +517,35 @@ src/
     ├── store.ts                 # bun:sqlite (devices, sessions, audit)
     └── server.ts                # Bun.serve WS server
 
-ui/
-├── index.html                   # SPA shell + importmap for vendored deps
-├── sw.js                        # service worker (Web Push + app-shell offline cache)
-├── manifest.webmanifest         # PWA manifest (install + home-screen integration)
-├── icon.svg                     # source of truth for the brand mark
-├── icon-192.png                 # PWA manifest icon (any)
-├── icon-512.png                 # PWA manifest icon (any)
-├── icon-maskable-512.png        # PWA manifest icon (maskable — adaptive launchers)
-├── apple-touch-icon.png         # iOS home-screen icon (180×180)
-├── vendor/                      # bundled marked (no CDN at runtime)
-└── app.ts                       # vanilla TypeScript SPA with ~30-line signal implementation
-                                  # (transpiled on the fly by Bun, no build step)
+ui/                              # React 18 + TypeScript + wouter, built by Vite
+├── index.html                   # Vite HTML entry → /src/main.tsx
+├── src/
+│   ├── main.tsx                 # SPA entry (mounts React)
+│   ├── App.tsx                  # app shell + wouter routes (/ , /sessions/:id)
+│   ├── store.ts                 # useSyncExternalStore store: /ws conn + relayed state
+│   ├── components/              # Sidebar, ChatPane, Composer, Transcript, modals, …
+│   ├── wire.ts                  # /ws frame types + client
+│   ├── markdown.ts              # marked (npm dep) + sanitize
+│   ├── format.ts                # small formatting helpers
+│   ├── pwa.ts                   # service-worker registration + update flow
+│   └── styles.css               # vanilla CSS with CSS variables
+├── public/                      # copied verbatim into the build output
+│   ├── sw.js                    # service worker (Web Push + app-shell offline cache)
+│   ├── manifest.webmanifest     # PWA manifest (install + home-screen integration)
+│   ├── icon.svg                 # source of truth for the brand mark
+│   ├── icon-192.png             # PWA manifest icon (any)
+│   ├── icon-512.png             # PWA manifest icon (any)
+│   ├── icon-maskable-512.png    # PWA manifest icon (maskable — adaptive launchers)
+│   └── apple-touch-icon.png     # iOS home-screen icon (180×180)
+└── dist/                        # `vite build` output (index.html + hashed assets/* +
+                                  # public files) — this is what `orc serve` hosts
 
 commands/
 └── orc.md                       # the /orc slash command (symlinked by make setup)
 
 scripts/
-├── build.ts                     # DISTRIBUTION ONLY — cross-compile to linux/darwin/windows
-├── build-icons.ts               # Rasterise ui/icon.svg into the PWA + iOS PNGs (dev-only)
+├── build.ts                     # DISTRIBUTION ONLY — build:ui, then cross-compile to linux/darwin/windows
+├── build-icons.ts               # Rasterise ui/public/icon.svg into the PWA + iOS PNGs (dev-only)
 ├── install-hooks.ts             # make setup helper: hooks + /orc into ~/.claude
 └── install-channel.ts           # make setup helper: mcpServers.orc into ~/.claude.json
 ```
@@ -792,9 +806,9 @@ The npm scripts in `package.json` are the source of truth — the
 ```text
 make help              # show every target with its description
 make install           # bun install
-make serve             # start the local relay (foreground)
+make serve             # build the SPA (Vite), then start the local relay (foreground)
 make hub               # start the public hub relay
-make dev               # serve with --watch (auto-restart on file change)
+make dev               # build the SPA, then run the relay in --watch (for UI HMR use the npm scripts below)
 make test              # bun test
 make test-coverage     # bun run test:coverage
 make typecheck         # tsc --noEmit
@@ -814,9 +828,11 @@ If you prefer npm scripts directly:
 
 ```bash
 bun install              # install deps
-bun run serve            # start the local relay (foreground)
+bun run build:ui         # build the React SPA (Vite) → ui/dist
+bun run serve            # build the SPA, then start the local relay (foreground)
 bun run hub              # start the public hub relay
-bun run dev              # serve with --watch
+bun run dev              # Vite SPA dev server + HMR on :5173 (proxies /ws,/agent,/api,/health)
+bun run dev:relay        # the relay on :7322 (run alongside `bun run dev` for UI development)
 bun test                 # tests
 bun run test:coverage    # with coverage report
 bun run typecheck        # strict TS
@@ -825,12 +841,14 @@ bun run build            # DISTRIBUTION ONLY — single-binary for current host
 bun run build --all      # DISTRIBUTION ONLY — single-binary for all 5 platforms
 ```
 
-> **Build step is optional.** `bun run build` produces a single-file
-> executable that bundles Bun + the source — useful for releasing
-> binaries to users who do not have Bun installed. To run the server
-> yourself, you do not need to build anything: `bun run serve` (or
-> `bun run src/cli.ts serve …`) launches the relay directly from the
-> TypeScript source.
+> **Two builds, one optional.** The SPA is a Vite build — `bun run serve`
+> (and `make serve`) run `build:ui` first to produce `ui/dist`, which the
+> relay hosts. The SERVER itself needs no build: it runs straight from the
+> TypeScript source with Bun. Separately, `bun run build` is the
+> *optional* distribution step — it produces a single-file executable that
+> bundles Bun + the source (and runs `build:ui` first) for users who do
+> not have Bun installed. To run the server yourself you never need the
+> single-binary build; `bun run serve` launches the relay directly.
 
 ---
 

@@ -1,10 +1,19 @@
 # Running Open Remote Control with Docker
 
-One image contains the whole CLI. `serve` — the relay + SPA — is the
-default command, so "start the server" is one line. The container is
-the **relay half only**: `claude`, the `/orc` bridge, and the
-Claude Code hooks always run on the host (or wherever your `claude`
-lives) and dial the container's published port.
+Docker is the **primary, recommended way to run the relay.** One image
+contains the whole CLI. `serve` — the relay + SPA — is the default
+command, so "start the server" is one line. The container is the
+**relay half only**: `claude`, the `/orc` bridge, and the Claude Code
+hooks always run on the host (or wherever your `claude` lives) and dial
+the container's published port.
+
+The image is **multi-stage**: a first stage runs a full `bun install`
+plus `bun run build:ui` to build the React + Vite SPA into `ui/dist`;
+the runtime stage does `bun install --production` and copies the
+TypeScript server source (`src/`) alongside the built `ui/dist`. The
+server itself runs straight from TS with Bun (no server build) — only
+the SPA is compiled, and it is compiled inside the image, so nothing on
+the host needs Node, npm, or a checkout of `ui/dist`.
 
 ```mermaid
 flowchart LR
@@ -215,9 +224,10 @@ and there is no `claude` in the container. Run those on the host.
   with Bun (no curl in the image). `docker ps` shows `(healthy)`;
   `curl http://127.0.0.1:7322/health` returns
   `{"status":"ok","clients":N,"push":"ok"}`.
-- **Upgrade.** `git pull && docker compose up -d --build`. The image
-  runs from source, so a rebuild is the whole upgrade; `/data` carries
-  your state across.
+- **Upgrade.** `git pull && docker compose up -d --build`. The build
+  rebuilds from the repo — first stage recompiles the SPA (Vite), the
+  runtime stage recopies the server source — so a rebuild is the whole
+  upgrade; `/data` carries your state across.
 - **`EADDRINUSE` / port already allocated.** A bare `orc serve`
   (or another container) already owns host port 7322. Stop it, or
   remap the compose port. Bare serve and Docker serve are the same

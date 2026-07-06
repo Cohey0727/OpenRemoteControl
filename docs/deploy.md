@@ -5,6 +5,13 @@ AWS ECS (Fargate), Google Cloud Run, and friends. The repo carries no
 environment-specific deploy files (hosts, domains, account IDs stay in
 your local tooling); this document is the pattern book.
 
+**Deploy the Docker image** — it is the recommended way to run the
+relay everywhere here. The `Dockerfile` is multi-stage: a first stage
+builds the React + Vite SPA into `ui/dist`, the runtime stage serves it
+next to the TypeScript server (which Bun runs straight from source). So
+the build host needs no local `bun run build:ui`; `docker build`
+produces a self-contained relay image.
+
 In every layout the split is the same: **the relay runs in the cloud;
 `claude`, the `/orc` bridge, and the Claude Code hooks stay on
 the machine where your session lives** and dial the relay's public
@@ -44,8 +51,9 @@ Read this once; it decides most platform choices.
 5. **Health.** `GET /health` → `{"status":"ok",…}`. Wire it into the
    platform's health checks.
 
-The container: build from the repo's `Dockerfile`, listens on 7322,
-binds `0.0.0.0` inside the container.
+The container: build from the repo's multi-stage `Dockerfile` (SPA
+built by Vite in the first stage), listens on 7322, binds `0.0.0.0`
+inside the container.
 
 ---
 

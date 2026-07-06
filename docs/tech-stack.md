@@ -153,58 +153,69 @@ CREATE TABLE audit (
 
 ---
 
-## UI: vanilla TypeScript + tiny signals (no build step)
+## UI: React + Vite + TypeScript + wouter
 
-**Pick:** vanilla TypeScript for the SPA, with a ~30-line home-grown
-signal implementation in `ui/app.ts`. The server transpiles `ui/app.ts`
-on the fly with `Bun.Transpiler` and serves it as JavaScript. **There
-is no UI build step.** The one runtime dependency (`marked`) is
-vendored under `ui/vendor/` and resolved via `<script type="importmap">`.
-Assistant markdown is sanitized (script/handler/`javascript:` stripped
-via the browser's own parser) before it reaches the DOM.
+**Pick:** the SPA is React 18 + TypeScript, routed with **wouter** and
+built with **Vite**. Source lives in `ui/src/` — `main.tsx` (entry),
+`App.tsx` (shell), `store.ts` (a `useSyncExternalStore` store holding
+the `/ws` connection plus all relayed session state), `components/*.tsx`
+(Sidebar, ChatPane, Composer, Transcript, modals, …), and the helpers
+`wire.ts`, `markdown.ts`, `format.ts`, `pwa.ts`, and `styles.css`. The
+HTML entry is `ui/index.html` → `/src/main.tsx`. `marked` is a normal
+npm dependency imported by `ui/src/markdown.ts` (no vendoring, no
+importmap); assistant markdown is sanitized (script/handler/`javascript:`
+stripped via the browser's own parser) before it reaches the DOM.
 
-PWA assets follow the same rule: `ui/manifest.webmanifest` and the
-icon PNGs are checked in as static files and served straight off disk.
+`vite build` (the `build:ui` npm script) emits `ui/dist/`: an
+`index.html` plus content-hashed `assets/*.js` / `assets/*.css`, with
+the static PWA files under `ui/public/` (sw.js, manifest.webmanifest,
+icons) copied verbatim into the output. `orc serve` (`src/serve.ts`)
+hosts `ui/dist/`: `/` and `/sessions/*` fall back to `dist/index.html`,
+`/assets/*` are served with an immutable long-lived cache (Vite's names
+are content-addressed), `/sw.js` is stamped with the shell-rev
+fingerprint, and the manifest is served no-cache.
+
 `scripts/build-icons.ts` is a maintainer-only helper that
-re-rasterises `ui/icon.svg` into the icon sizes when the source SVG
-changes; it runs at developer time, never on the server boot path,
-and the runtime `serve` simply ships the pre-generated PNGs that
-already exist in the repo. `scripts/build.ts` (the distribution
-cross-compile) does not touch UI assets.
+re-rasterises `ui/public/icon.svg` into the icon sizes when the source
+SVG changes; it runs at developer time, never on the server boot path.
+`scripts/build.ts` (the distribution cross-compile) runs `build:ui`
+first so the binary ships an up-to-date `ui/dist`.
 
-**Why no build step:**
-- One source of truth for the SPA. Edit `ui/app.ts`, save, reload.
-- The server is the same process that hosts the SPA, so a single
-  `bun run serve` boots both the relay and the UI.
-- Removes a class of bugs (stale builds, mismatched hashes, missing
-  chunks) entirely.
-- Trade-off: first request for `app.ts` runs the transpiler (~50 ms
-  cold). For a tool the user keeps open in a tab, this is invisible.
+**Why a real framework and build now:**
+- The hand-rolled router + signal store was fragile: URL, sidebar
+  selection, the attached clientId, and the mobile pane state were
+  four sources of truth that kept diverging (a reload or a shared
+  link could land on a different pane than the one selected). With
+  wouter the active session id is **derived from the route**
+  (`/sessions/:id`), so URL / selection / attach / mobile-pane can no
+  longer drift apart, and the browser back button returns to the list.
+- React's component model keeps the growing surface (sidebar, chat
+  transcript, permission modal, question card, ask-tool view, iOS
+  hint) maintainable; the `useSyncExternalStore` store integrates the
+  dense bridge-event stream without a bespoke reactivity layer.
+- Vite gives fast HMR in development (`bun run dev` on :5173, proxying
+  `/ws`,`/agent`,`/api`,`/health` to a relay from `bun run dev:relay`
+  on :7322) and content-hashed, cacheable bundles in production.
 
-**Why vanilla + tiny signals (not a framework):**
-- The SPA is small: one sidebar list, one chat transcript, one modal.
-  A framework's component model, lifecycle hooks, and reconciler are
-  paid for in bundle weight and cognitive overhead without buying
-  anything we use.
-- Fine-grained reactivity without a virtual DOM. The bridge-event
-  stream is dense; we need per-row updates without re-rendering the
-  whole sidebar.
-- Vendor surface stays under our control: `marked` is vendored
-  locally as plain JS, no CDN at runtime.
+**Routing:** wouter. `/` = sidebar/home, `/sessions/:id` = one session.
+Deep-link history is seeded so the back button returns to the list.
 
-**Styling:** vanilla CSS with CSS variables for theming. No Tailwind
-unless we hit a real reason to add it.
+**PWA:** still hand-rolled — the service worker (`ui/public/sw.js`) and
+manifest are checked-in static files copied through the Vite build, and
+the server appends a `shell-rev` fingerprint to `/sw.js` so any UI
+change registers as an SW update without a cache-version bump.
+
+**Styling:** vanilla CSS with CSS variables for theming (`ui/src/styles.css`).
+No Tailwind unless we hit a real reason to add it.
 
 **Alternatives considered:**
-- **Solid.js** — fine framework, but added an opaque runtime that
-  consistently failed to render in our headless browser environment.
-  Vanilla DOM with a 30-line `signal()` does the same job for our
-  UI shape and removes the dependency.
-- **Vite** — adds a build step (and a separate dev process). We
-  don't need HMR because `bun --watch` restarts the whole server
-  when source files change.
-- **Preact / Svelte / React** — comparable reasoning as before; none
-  earn their weight on a SPA this small once vanilla TS proved viable.
+- **Solid.js** — the earlier vanilla/signal era ruled it out for an
+  opaque runtime; with React chosen for ecosystem and headless-test
+  reliability, Solid stays a non-pick.
+- **Preact / Svelte** — viable, but React's tooling (Vite plugin,
+  types, wouter) and team familiarity won.
+- **esbuild / Bun bundler** — Vite wraps esbuild/Rollup with a batteries-
+  included dev server (HMR + proxy) we'd otherwise hand-build.
 
 ---
 
@@ -360,8 +371,12 @@ recognizably ours). `make teardown` reverses all of it.
 ## Docker
 
 **Pick:** one all-in-one image (`Dockerfile`, base `oven/bun:1.3-slim`)
-that runs the CLI straight from source — the same no-build philosophy,
-containerized. `serve` is the default command; `hub`/`tui` reuse the
+is **the primary, recommended way to run the relay**. It is multi-stage:
+a first stage runs a full `bun install` + `bun run build:ui` to produce
+`ui/dist`; the runtime stage does `bun install --production` and copies
+`src/` plus the built `ui/dist`. The SERVER still runs straight from the
+TypeScript source with Bun (no server build) — only the SPA is built,
+in-image. `serve` is the default command; `hub`/`tui` reuse the
 image via command args. `XDG_DATA_HOME=/data` routes every piece of
 mutable state (VAPID keys, push DB, audit log) into a single volume;
 `docker-compose.yml` publishes `127.0.0.1:7322` (loopback, mirroring
@@ -374,12 +389,15 @@ hooks all stay on the host and dial the published port.
 
 ## Build & distribution
 
-**Pick (server runtime):** launch directly from TypeScript via Bun.
-No build step required for the developer or the user who already has
-Bun installed:
+**Pick (server runtime):** the server launches directly from TypeScript
+via Bun — no server build step. The SPA, however, is a Vite build, so
+`make serve` / `bun run serve` run `build:ui` first to produce `ui/dist`
+before starting the relay:
 
 ```bash
+bun run build:ui                                    # → ui/dist
 bun run src/cli.ts serve --host 127.0.0.1 --port 7322
+# or, in one step: bun run serve   (builds the SPA, then serves)
 ```
 
 **Pick (binary distribution):** `bun build --compile` produces a
@@ -427,8 +445,8 @@ wire without a major release.
 | Language       | TypeScript (strict)        | —                    |
 | HTTP / WS      | Bun.serve                  | Hono + ws            |
 | Persistence    | bun:sqlite                 | Postgres, libSQL     |
-| UI framework   | vanilla TS + tiny signals | Solid, Preact, Svelte, React |
-| UI build       | none (Bun.Transpiler + importmap) | Vite, esbuild   |
+| UI framework   | React 18 + wouter          | Solid, Preact, Svelte |
+| UI build       | Vite                       | esbuild, Bun bundler |
 | Crypto         | WebCrypto (Ed25519)        | @noble/ed25519       |
 | Auth           | Ed25519 device pairing     | OAuth, WebAuthn      |
 | Logging        | console                    | pino, winston        |

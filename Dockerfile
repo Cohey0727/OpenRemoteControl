@@ -1,9 +1,10 @@
-# open-rc — all-in-one image.
+# open-rc — all-in-one image (the primary way to run the relay).
 #
-# One image, the whole CLI: `serve` (default), `hub`, and `tui`. Runs
-# straight from the TypeScript source with Bun — no build step, same
-# as the repo's no-build philosophy. The container never runs
-# `claude`: it is the relay side only. `/orc` (bridge + hooks)
+# One image, the whole CLI: `serve` (default), `hub`, and `tui`. The
+# SERVER runs straight from the TypeScript source with Bun (no server
+# build). The SPA is a Vite build (React + TS + wouter): a first stage
+# builds `ui/dist`, the runtime stage serves it off disk. The container
+# never runs `claude`: it is the relay side only. `/orc` (bridge + hooks)
 # runs on the host next to your claude and dials the published port.
 #
 #   docker build -t open-rc .
@@ -14,18 +15,27 @@
 #   docker run --rm -it orc tui --server ws://host.docker.internal:7322/ws
 #   docker run -d -p 7443:7443 orc hub --host 0.0.0.0 --port 7443
 
-FROM oven/bun:1.3-slim
+# ---- stage 1: build the SPA (Vite needs the dev dependencies) ----------
+FROM oven/bun:1.3-slim AS ui
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+COPY vite.config.ts tsconfig.json ./
+COPY ui ./ui
+RUN bun run build:ui   # → /app/ui/dist
 
+# ---- stage 2: runtime (server source + built SPA) ----------------------
+FROM oven/bun:1.3-slim
 WORKDIR /app
 
-# Dependency layer — cached until the lockfile changes.
+# Dependency layer — runtime deps only, cached until the lockfile changes.
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-# App code: server source + the SPA (served straight off disk).
+# App code: server source + the built SPA (served straight off disk).
 COPY tsconfig.json ./
 COPY src ./src
-COPY ui ./ui
+COPY --from=ui /app/ui/dist ./ui/dist
 
 # All mutable state (VAPID keys, push subscriptions, audit log) honors
 # XDG_DATA_HOME, so one volume holds everything the relay persists.

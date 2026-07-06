@@ -380,19 +380,28 @@ route:
   browser reflects the active session in the URL path
   (`/sessions/<clientId>`, via `history.pushState`), so a reload or a
   shared link deep-links back to that session; the server's SPA
-  fallback returns index.html for those paths. SPA assets are loaded
-  with root-absolute paths (`/app.ts`, `/vendor/…`) so they resolve
-  under a session subpath.
+  fallback returns `dist/index.html` for those paths. The SPA is a
+  Vite build: its content-hashed bundles load from root-absolute
+  `/assets/…` paths (Vite `base: '/'`) so they resolve under a session
+  subpath.
 
 The server is a stateless relay beyond the in-memory `clients` map.
 It starts no processes. It does not walk the process table. It
 does not know what `claude` is.
 
-The UI is a vanilla TypeScript SPA (`ui/app.ts`, no build step) with
-a small home-grown signal implementation. Sidebar + chat-pane,
-hand-rolled CSS with a token system. The one render dep (`marked`)
-is vendored under `ui/vendor/` and resolved via importmap; assistant
-markdown is sanitized before it touches innerHTML.
+The UI is a **React + Vite + TypeScript + wouter** SPA under `ui/src/`
+(`main.tsx`, `App.tsx`, a `useSyncExternalStore` store in `store.ts`
+that holds the `/ws` connection and all relayed state, and
+`components/*.tsx`). wouter owns routing: `/` is the sidebar/home,
+`/sessions/:id` a session, and the active session is DERIVED from the
+URL — not a separate signal — so the URL, the store's attachment, and
+the mobile pane can never diverge (the class of router bug the old
+hand-rolled build kept hitting). `vite build` (`bun run build:ui`)
+emits `ui/dist/`, which `orc serve` hosts. Sidebar + chat-pane,
+hand-rolled CSS with a token system (`ui/src/styles.css`). `marked`
+is a normal dependency; assistant markdown is sanitized before it
+touches innerHTML. The earlier vanilla-TS / home-grown-signal /
+importmap build was replaced on 2026-07-06 — do NOT reintroduce it.
 
 The user runs `claude` themselves. To share it, they either type
 `/orc` in the session (first-party, transcript+hooks) or bring
@@ -459,14 +468,23 @@ present — channel mode has no queue and needs no linger.
 
 ## Style reminders
 
-- Bun + TypeScript strict, vanilla TS SPA with a tiny signal
-  implementation, importmap for vendored `marked` (no build step).
-  See README for the canonical setup.
-- `bun run build` (which calls `bun build --compile`) is for
-  **distribution only** — it produces a single-file executable for
-  users without Bun. It is NOT required to run the server in
-  development. Launch the server with `bun run src/cli.ts serve`
-  or `make serve`.
+- Bun + TypeScript strict on the server; the SPA is **React + Vite +
+  TypeScript + wouter** (see README for the canonical setup). Routing
+  is wouter, NEVER hand-rolled and NEVER Next.js (owner's call,
+  2026-07-06). The server still runs straight from TS source with Bun
+  (no server build); only the SPA is built (`vite build` → `ui/dist`).
+- **The SPA has a build step now.** `bun run build:ui` (Vite) produces
+  `ui/dist`, which `orc serve` hosts — so `make serve` builds the UI
+  first, and running the relay bare (`bun run src/cli.ts serve`)
+  requires a prior `bun run build:ui` or it returns "UI not built".
+  Dev with HMR: `bun run dev` (Vite :5173, proxies /ws,/agent,/api to
+  a relay on :7322) alongside `bun run dev:relay`.
+- **Docker is the primary way to run the server** (owner's directive,
+  2026-07-06): prefer `docker compose up -d --build`. The Dockerfile
+  is multi-stage — stage 1 builds the SPA (Vite), stage 2 serves it.
+- `bun run build` (which calls `scripts/build.ts` → `build:ui` then
+  `bun build --compile`) is for **distribution only** — a single-file
+  executable for users without Bun. Not needed to run the server.
 - Immutability, small files (200–400 lines), comprehensive error
   handling, zod for wire-protocol validation.
 - Documentation follow-up is mandatory when code changes — update
@@ -493,23 +511,25 @@ present — channel mode has no queue and needs no linger.
   `pipe`, no `client` — launching processes is out of scope (see
   Project goal).
 - Docker: `Dockerfile` + `docker-compose.yml` ship an all-in-one image
-  (base `oven/bun:1.3-slim`) that runs the CLI from source — serve by
-  default, `hub`/`tui` via args, state in the `/data` volume
-  (`XDG_DATA_HOME`), port published loopback-only by default. The
+  (base `oven/bun:1.3-slim`), the PRIMARY deployment. It is MULTI-STAGE:
+  stage 1 runs `bun run build:ui` (Vite) to produce `ui/dist`; stage 2
+  does a production install and serves the built SPA + server source
+  (serve by default, `hub`/`tui` via args, state in the `/data` volume
+  via `XDG_DATA_HOME`, port published loopback-only by default). The
   container is the relay half ONLY: no `claude`, no bridge, no hooks
   inside it; `/orc` runs on the host and dials the published
   port. Do not bake a bridge or claude into the image.
-- PWA assets follow the same no-build-step rule: `ui/manifest.webmanifest`
-  and the icon PNGs are checked in as static files and served
-  straight off disk. PWA updates are AGGRESSIVE by design (requested
-  2026-07-03): the server appends a `shell-rev` fingerprint of `ui/`
-  to `/sw.js` (`src/serve/shell-rev.ts`) so any UI change registers
+- PWA assets live in `ui/public/` (`manifest.webmanifest`, `sw.js`,
+  the icon PNGs) and Vite copies them verbatim into `ui/dist/`. PWA
+  updates are AGGRESSIVE by design (requested 2026-07-03): the server
+  appends a `shell-rev` fingerprint of `ui/dist/` to `/sw.js`
+  (`src/serve/shell-rev.ts`) so any UI change registers
   as an SW update without a `CACHE_VERSION` bump; the SPA checks
   every 5 min + on foreground-resume/online, the SW `skipWaiting()`s
   after precache, and the page self-reloads on `controllerchange`
   (composer draft parked in `sessionStorage` across the reload). Do
-  not re-introduce a "wait for the user to reload" update path. `scripts/build-icons.ts` is a maintainer-only
-  helper (re-rasterises `ui/icon.svg` → icon PNGs); it is never run
-  on the server boot path. `scripts/build.ts` (distribution cross-
-  compile) does not touch UI assets — the no-UI-build rule survives
-  PWA unchanged.
+  not re-introduce a "wait for the user to reload" update path.
+  `scripts/build-icons.ts` is a maintainer-only helper (re-rasterises
+  `ui/public/icon.svg` → icon PNGs); it is never run on the server boot
+  path. `scripts/build.ts` (distribution cross-compile) now runs
+  `build:ui` first so the single-file binary ships with a built SPA.
