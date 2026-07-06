@@ -36,6 +36,7 @@
 import { z } from 'zod';
 import {
   attachDirFor,
+  attachedCountMtime,
   bridgeAlive,
   browserTurnMarkerExists,
   clearAnswer,
@@ -57,21 +58,27 @@ import { OPENRC_MARKER } from '../transcript/translate.ts';
 /** Default post-turn listening window while viewers are attached. */
 const DEFAULT_LINGER_MS = 45_000;
 /**
- * Window used while the conversation is BROWSER-DRIVEN (the last turn
- * was injected from an attached view): UNLIMITED by default. The
- * terminal is unattended — the remote user owns the session, and any
- * finite window (5 min, then 30 min) proved to be a cliff someone
- * eventually fell off. The linger is a sleeping poll loop: no tokens,
- * no context growth, ~zero CPU. It ends when a message is delivered
- * (and a fresh one starts at that turn's end), when the session or
- * bridge ends, or when the terminal user presses Esc — verified to
- * cancel a running Stop hook instantly, returning the prompt. (Also
- * verified: a prompt TYPED during a running hook queues until the
- * hook exits — it does not cancel it — which is why the CLI-driven
- * window stays short.) A prompt typed after Esc clears browser-driven
- * mode, restoring the short window. Deliberately no env cap — always
- * unlimited; the installed Stop-hook `timeout` (30 days) is the
- * mechanical outer bound.
+ * Window used while the conversation is BROWSER-DRIVEN: UNLIMITED by
+ * default. The terminal is presumed unattended — the remote user owns
+ * the session, and any finite window (5 min, then 30 min) proved to
+ * be a cliff someone eventually fell off. The linger is a sleeping
+ * poll loop: no tokens, no context growth, ~zero CPU. It ends when a
+ * message is delivered (and a fresh one starts at that turn's end),
+ * when the session or bridge ends, or when the terminal user presses
+ * Esc — verified to cancel a running Stop hook instantly, returning
+ * the prompt. (Also verified: a prompt TYPED during a running hook
+ * queues until the hook exits — it does not cancel it — which is why
+ * the CLI-driven window stays short.) A prompt typed after Esc clears
+ * browser-driven mode, restoring the short window.
+ *
+ * BROWSER-DRIVEN means "a browser/tui message was actually DELIVERED
+ * into this session" — nothing weaker. Marking the session
+ * browser-driven at bridge start or on mere viewer attach hard-hung
+ * the terminal (2026-07-06): the /orc turn's own Stop hook entered
+ * the unlimited linger with the user still sitting at the prompt, and
+ * their typed input queued behind it forever. Attach instead REFRESHES
+ * the finite window (see runStopHook), which covers the first-message
+ * case without ever capturing an attended terminal.
  */
 const DEFAULT_ACTIVE_LINGER_MS = Number.POSITIVE_INFINITY;
 /** Queue poll cadence during the linger window. */
@@ -162,20 +169,21 @@ export async function runStopHook(
   // Turn ended — let the bridge close the turn for attached viewers.
   await touchStopMarker(dir);
 
-  // Browser-driven conversations get the unlimited window: the last
-  // turn was injected from an attached view, so the terminal is
-  // presumed unattended and the remote user expects the next reply to
-  // just work — whenever it comes.
+  // Browser-driven conversations (a browser message was DELIVERED into
+  // this session and no CLI prompt has been typed since) get the
+  // unlimited window: the terminal is presumed unattended and the
+  // remote user expects the next reply to just work — whenever it comes.
   const browserDriven = await browserTurnMarkerExists(dir);
   const window = browserDriven
     ? (opts?.activeLingerMs ?? activeLingerMs())
     : (opts?.lingerMs ?? lingerMs());
-  const deadline = Date.now() + window;
+  const start = Date.now();
 
   for (;;) {
     const texts = await drainQueue(dir);
     if (texts.length > 0) {
-      // The next turn is browser-driven; keep listening after it too.
+      // A delivery is what MAKES the conversation browser-driven; keep
+      // listening without a deadline after this turn too.
       await touchBrowserTurnMarker(dir);
       await hookDebug({ hook: 'stop', exit: 'delivered', n: texts.length });
       return { output: { decision: 'block', reason: formatBlockReason(texts) } };
@@ -197,6 +205,14 @@ export async function runStopHook(
       await hookDebug({ hook: 'stop', exit: 'no-viewers', browserDriven });
       return {};
     }
+    // Browser-driven: the deadline is start + window (unlimited by
+    // default). CLI mode: the finite window counts from the LATER of
+    // the turn end and the last viewer attach/detach event — someone
+    // who just opened the page gets a full window for their first
+    // message, without the terminal ever being captured indefinitely.
+    const deadline = browserDriven
+      ? start + window
+      : Math.max(start, (await attachedCountMtime(dir)) ?? 0) + window;
     if (Date.now() >= deadline) {
       await hookDebug({ hook: 'stop', exit: 'deadline', window });
       return {};

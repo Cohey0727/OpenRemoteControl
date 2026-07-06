@@ -103,6 +103,35 @@ describe('runStopHook', () => {
     expect(result.output).toBeUndefined();
   });
 
+  test('viewers attached but not browser-driven → the window stays FINITE (no terminal capture)', async () => {
+    // Regression (2026-07-06): entering unlimited-linger mode at bridge
+    // start / on attach hung claude right after /orc — the terminal
+    // user's typed prompts queued behind the never-ending Stop hook.
+    const { sessionId, dir } = await liveBridgeSession();
+    await writeAttachedCount(dir, 1); // a browser tab is watching
+    const started = Date.now();
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 300 });
+    expect(result.output).toBeUndefined(); // allowed to stop — no capture
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  test('an attach event mid-linger re-arms the finite window', async () => {
+    const { sessionId, dir } = await liveBridgeSession();
+    await writeAttachedCount(dir, 1);
+    // Window is 900 ms from turn end. A new viewer attaches at ~600 ms
+    // (fresh attached.json mtime), re-arming the deadline, so their
+    // first message at ~1.2 s is still delivered.
+    setTimeout(() => {
+      void writeAttachedCount(dir, 2);
+    }, 600);
+    setTimeout(() => {
+      void appendQueue(dir, 'first message right after opening the page');
+    }, 1_200);
+    const result = await runStopHook({ session_id: sessionId }, { baseDir: base, lingerMs: 900 });
+    expect(result.output?.decision).toBe('block');
+    expect(result.output?.reason as string).toContain('first message right after opening the page');
+  });
+
   test('browser-driven mode: delivery sets the marker and the long window applies', async () => {
     const { sessionId, dir } = await liveBridgeSession();
     await writeAttachedCount(dir, 1);

@@ -41,13 +41,13 @@ import {
   HEARTBEAT_INTERVAL_MS,
   appendQueue,
   attachDirFor,
+  attachedCountMtime,
   browserTurnMarkerExists,
   createAttachDir,
   endMarkerExists,
   readQuestion,
   removeAttachDir,
   stopMarkerMtime,
-  touchBrowserTurnMarker,
   writeAnswer,
   writeAttachedCount,
   writeBridgeInfo,
@@ -55,7 +55,7 @@ import {
 import { resolveTranscript } from '../transcript/locate.ts';
 import { type TailHandle, readAllLines, tailFile } from '../transcript/tail.ts';
 import { type TranscriptFrame, entryTimestamp, translateEntry } from '../transcript/translate.ts';
-import { activeLingerMs, lingerMs } from './attach-hooks.ts';
+import { lingerMs } from './attach-hooks.ts';
 import { parseFlags } from './flags.ts';
 import { openWebSocket } from './ws-auth.ts';
 
@@ -240,13 +240,14 @@ export async function runAttachOrc(
 
   await createAttachDir(dir);
   await writeBridgeInfo(dir, { clientId, server: flags.server, startedAt: Date.now() });
-  // Running /orc IS the remote-control intent: enter browser-driven
-  // (unlimited listening) mode immediately, so the very first turn end
-  // after sharing starts an open-ended window — a viewer who attaches
-  // minutes later still gets instant delivery. The first prompt typed
-  // in the terminal clears it (UserPromptSubmit), restoring short
-  // windows for attended terminals.
-  await touchBrowserTurnMarker(dir);
+  // Deliberately NOT browser-driven yet: marking the session
+  // browser-driven at bridge start made the /orc turn's own Stop hook
+  // linger without a deadline, and the terminal user's typed prompts
+  // queued behind it — claude appeared to hang the moment orc started
+  // (2026-07-06). Browser-driven mode now begins only when a browser
+  // message is actually DELIVERED (the Stop hook touches the marker);
+  // until then the hooks use the finite window, refreshed by viewer
+  // attach events.
 
   let ws: WebSocket | null = null;
   let tail: TailHandle | null = null;
@@ -258,6 +259,11 @@ export async function runAttachOrc(
   let lastStopMtime = await stopMarkerMtime(dir);
   /** requestId of the last `question` frame relayed (dedupe). */
   let lastQuestionId: string | null = null;
+  /** When the attached count last went 0 → >0 (null while nobody is
+   *  watching). Feeds the idle-notice heuristic: the Stop hook exits
+   *  instantly at zero viewers, so a linger can only have survived a
+   *  turn end if someone was attached before it. */
+  let attachedSince: number | null = null;
   /** Epoch ms of the last frame received from the server (the server
    *  keepalive-pings every 30 s, so silence means a dead link). */
   let lastServerActivity = Date.now();
@@ -356,9 +362,19 @@ export async function runAttachOrc(
   let lastIdleNoticeAt = 0;
   const notifyIfNoListener = async (): Promise<void> => {
     if (turn.turnOpen) return; // a turn is running; delivery comes at its end
+    // Browser-driven sessions keep an unlimited Stop-hook linger alive
+    // after every turn — always listening, no notice needed.
+    if (await browserTurnMarkerExists(dir)) return;
+    // CLI mode: a Stop hook can only still be lingering if viewers were
+    // already attached when the turn ended (it exits instantly at zero
+    // viewers), and then only for the finite window, counted from the
+    // later of the turn end and the last attach/detach event.
     const stopM = await stopMarkerMtime(dir);
-    const windowMs = (await browserTurnMarkerExists(dir)) ? activeLingerMs() : lingerMs();
-    const listening = stopM !== null && Date.now() - stopM < windowMs - 5_000;
+    const attachedM = await attachedCountMtime(dir);
+    const hookSurvivedTurnEnd =
+      stopM !== null && attachedSince !== null && attachedSince <= stopM + 2_000;
+    const deadline = stopM === null ? 0 : Math.max(stopM, attachedM ?? 0) + lingerMs();
+    const listening = hookSurvivedTurnEnd && Date.now() < deadline - 5_000;
     if (listening) return;
     if (Date.now() - lastIdleNoticeAt < 30_000) return;
     lastIdleNoticeAt = Date.now();
@@ -493,20 +509,25 @@ export async function runAttachOrc(
       }
       case 'attached': {
         if (typeof msg.count === 'number') {
+          // Writing the count also refreshes attached.json's mtime,
+          // which the Stop hook uses to extend its finite listening
+          // window — a viewer who just opened the page gets a full
+          // window for a first message. Attach deliberately does NOT
+          // flip browser-driven (unlimited) mode: that captured
+          // attended terminals (typed prompts queue behind a running
+          // Stop hook) and hung claude right after /orc (2026-07-06);
+          // only an actual delivery flips it.
           void writeAttachedCount(dir, msg.count).catch(() => {});
-          // A viewer opening the session IS the remote-control intent:
-          // switch to browser-driven (unlimited listening) right away,
-          // so even the FIRST message can never miss a window. A prompt
-          // typed in the terminal switches back (UserPromptSubmit
-          // clears the marker), keeping attended terminals snappy.
           if (msg.count > 0) {
-            void touchBrowserTurnMarker(dir).catch(() => {});
+            attachedSince ??= Date.now();
             // `question` frames are transient (never in the server's
             // replay buffer), so a viewer attaching while the ask hook
             // is still waiting would see only the raw tool_use JSON.
             // Reset the dedupe so the next marker poll re-relays the
             // pending question; viewers dedupe by requestId.
             lastQuestionId = null;
+          } else {
+            attachedSince = null;
           }
         }
         return;

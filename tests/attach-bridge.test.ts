@@ -163,9 +163,13 @@ describe('attach-orc bridge', () => {
 
     const dir = attachDirFor(SESSION_ID, ATTACH_BASE);
     await until(async () => (await readAttachedCount(dir)) >= 1);
-    // Attaching flips the session into remote-listening mode so even
-    // the FIRST browser message has an unlimited delivery window.
-    await until(() => browserTurnMarkerExists(dir));
+    // Attaching must NOT flip browser-driven (unlimited-linger) mode —
+    // doing so captured attended terminals (typed prompts queue behind
+    // the running Stop hook) and hung claude right after /orc. Only an
+    // actual delivery flips it; attach just refreshes the finite window
+    // via attached.json's mtime.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await browserTurnMarkerExists(dir)).toBe(false);
     browser.close();
   });
 

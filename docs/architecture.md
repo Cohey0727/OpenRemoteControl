@@ -245,8 +245,13 @@ Components:
 - `src/cli/attach-hooks.ts` — `orc hook stop|prompt|end`. Stop
   drains the queue and blocks the stop with the messages as reason
   (that is how a browser prompt enters the session); while viewers are
-  attached it lingers (default 45 s, `ORC_STOP_LINGER_MS`) so
-  browser-driven conversation flows turn after turn.
+  attached it lingers (default 45 s, `ORC_STOP_LINGER_MS`, re-armed by
+  each viewer attach event), and once a browser message has actually
+  been delivered it lingers without a deadline (browser-driven mode) so
+  remote conversation flows turn after turn. Delivery — not bridge
+  start, not attach — is what enters browser-driven mode: an indefinite
+  listener at any weaker trigger captures an attended terminal (typed
+  prompts queue behind a running hook).
 - clientId = session id, so `/sessions/<id>` deep links survive bridge
   restarts; a second bridge on the same session fails fast on the
   duplicate-clientId register error.

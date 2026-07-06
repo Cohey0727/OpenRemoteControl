@@ -71,6 +71,9 @@ export async function createAttachDir(dir: string): Promise<void> {
     endPath(dir),
     browserTurnPath(dir),
     questionPath(dir),
+    // A stale attached count from a dead bridge would make the Stop
+    // hook linger for viewers that are no longer there.
+    attachedPath(dir),
   ]) {
     await unlink(p).catch(() => {});
   }
@@ -128,6 +131,20 @@ export async function readAttachedCount(dir: string): Promise<number> {
     return parsed.success ? parsed.data.count : 0;
   } catch {
     return 0;
+  }
+}
+
+/** When the attached count last changed (epoch ms), or null if no
+ *  viewer event has happened yet. The Stop hook counts its finite
+ *  listening window from the LATER of turn end and this timestamp, so
+ *  a viewer who just opened the page gets a full window to send a
+ *  first message. */
+export async function attachedCountMtime(dir: string): Promise<number | null> {
+  try {
+    const s = await stat(attachedPath(dir));
+    return s.mtimeMs;
+  } catch {
+    return null;
   }
 }
 

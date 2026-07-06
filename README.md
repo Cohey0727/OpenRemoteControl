@@ -146,10 +146,14 @@ them into the running session: the Stop hook picks them up at every
 turn end, and while a browser/tui viewer is attached it keeps a
 listening window open after each turn. The window is adaptive:
 normally short (45 s, `ORC_STOP_LINGER_MS`) so prompts you type in the
-terminal never wait long, but the moment a viewer ATTACHES (or a turn
-is driven from the browser) the session switches to remote mode and
-listens **indefinitely** — a remote conversation never falls off a window
-cliff, no matter how long you take to reply. Reclaim the terminal any
+terminal never wait long, and every viewer attach re-arms it — opening
+the page grants a fresh full window for a first message. The moment a
+browser message is actually **delivered**, the session switches to
+remote mode and listens **indefinitely** — a remote conversation never
+falls off a window cliff, no matter how long you take to reply.
+(Remote mode starts at a real delivery, never at bridge start or on
+mere attach: an indefinite listener would capture an attended terminal —
+typed prompts queue behind a running hook.) Reclaim the terminal any
 time by pressing **Esc** — it cancels the listening hook instantly
 (verified against a live session) and typing a prompt then returns
 everything to the short window. Messages that

@@ -73,17 +73,23 @@ rebuilds the same UX against any provider by relaying the public
   `~/.claude/settings.json` by `make setup`) drain that queue — Stop
   blocks with the messages as reason (delivery at turn ends, with an
   ADAPTIVE linger window: 45 s normally (`ORC_STOP_LINGER_MS`),
-  UNLIMITED while the conversation is browser-driven — and a viewer
-  ATTACHING flips browser-driven mode on immediately (the bridge
-  touches the marker on `attached count>0`), so even the FIRST remote
-  message has no window to miss (`ORC_STOP_LINGER_ACTIVE_MS` caps it if set; tracked
-  via `browser-turn.marker`; 5 min then 30 min both proved to be
-  cliffs — went unlimited 2026-07-03, no env cap. Esc hands the
-  prompt back to the terminal instantly; the next real CLI prompt
-  clears browser-driven mode. EMPIRICALLY VERIFIED 2026-07-03 on a
+  RE-ARMED by every viewer attach/detach event (attached.json mtime —
+  someone who just opened the page gets a full window for a first
+  message), and UNLIMITED only once a browser message has actually
+  been DELIVERED (browser-driven mode, tracked via
+  `browser-turn.marker`; 5 min then 30 min both proved to be cliffs —
+  went unlimited 2026-07-03, no env cap). Browser-driven mode is
+  deliberately NOT entered at bridge start or on mere attach: both
+  were tried and HUNG claude right after /orc — the /orc turn's own
+  Stop hook lingered without a deadline while the user sat at the
+  terminal, and their typed prompts queued behind it (reported and
+  fixed 2026-07-06). Esc hands the prompt back to the terminal
+  instantly; the next real CLI prompt clears browser-driven mode.
+  EMPIRICALLY VERIFIED 2026-07-03 on a
   live claude in tmux: (a) a prompt typed during a running Stop hook
-  QUEUES until the hook exits — it does NOT cancel the hook, so the
-  SHORT window must stay short; (b) pressing Esc DOES cancel a
+  QUEUES until the hook exits — it does NOT cancel the hook, so any
+  linger while the terminal may be attended must stay FINITE; (b)
+  pressing Esc DOES cancel a
   running Stop hook immediately and the prompt returns — that is the
   terminal-side priority handoff, no extra command needed).
   UserPromptSubmit attaches queued messages
