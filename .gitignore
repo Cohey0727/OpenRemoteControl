@@ -41,3 +41,6 @@ vps/
 # They hold per-run fixture UUIDs and are recreated on every test run;
 # they must never be tracked.
 tests/.tmp-*/
+
+# Local working notes (owner scratch, never repo material)
+issue.md
