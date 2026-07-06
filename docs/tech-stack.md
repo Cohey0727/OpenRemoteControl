@@ -316,14 +316,19 @@ configs to maintain), `dprint` (good, less ecosystem).
 
 **Nothing in open-rc starts, attaches to, signals, or introspects
 another process.** No `child_process`, no PTY, no tmux anywhere in the
-project. `serve`, `hub`, `tui`, `attach-orc`, and `hook` are the whole
-CLI, and each process's tree contains only itself.
+project. `serve`, `hub`, `tui`, `attach`, `channel`, and `hook` are the
+whole CLI, and each process's tree contains only itself. `channel` is
+the one process open-rc does not even launch — `claude`'s own MCP
+machinery spawns it (from the `mcpServers.orc` entry) when a session
+starts with `--dangerously-load-development-channels server:orc`.
 
 If the user wants a `claude` running, they run it themselves. To share
 that session with the browser they either type `/orc` inside it
 (first-party: the bridge tails the session's own transcript JSONL and
 the Claude Code hooks deliver browser prompts back — file I/O and
-WebSockets only, see `docs/architecture.md` §3.5) or write their own
+WebSockets only, see `docs/architecture.md` §3.5), start it under the
+`orc` channel (instant browser→session delivery even while idle, plus
+permission relay — Issue #11 O4, research preview), or write their own
 bridge that pipes `claude`'s stream-json to `/agent`.
 
 > **Spawning remains out of scope.** The original `attach-orc`
@@ -341,8 +346,10 @@ anchor lives in the launcher and a `git pull` updates behavior with no
 rebuild. It then runs `scripts/install-hooks.ts`, which merges the
 Stop / UserPromptSubmit / SessionEnd hook entries into
 `~/.claude/settings.json` (idempotent; user hooks preserved) and
-symlinks `commands/orc.md` into `~/.claude/commands/`.
-`make teardown` reverses all of it.
+symlinks `commands/orc.md` into `~/.claude/commands/`; and
+`scripts/install-channel.ts`, which registers the `mcpServers.orc`
+channel entry in `~/.claude.json` (idempotent; only replaces an entry
+recognizably ours). `make teardown` reverses all of it.
 
 ---
 

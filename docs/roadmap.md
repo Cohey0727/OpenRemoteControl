@@ -1,9 +1,10 @@
 # Open Remote Control — Roadmap
 
-> **Last revised:** 2026-07-02. The server is a pure WebSocket relay:
+> **Last revised:** 2026-07-06. The server is a pure WebSocket relay:
 > it runs no processes, walks no process table, takes over nothing.
-> The CLI exposes `serve`, `hub`, `tui`, `attach-orc`, and `hook` —
-> none launch a process.
+> The CLI exposes `serve`, `hub`, `tui`, `attach-orc`, `channel`, and
+> `hook` — none launch a process (`channel` is itself spawned by
+> claude's own MCP machinery, never by open-rc).
 
 > **⚠ 2026-07-02 — process-launching helpers removed.** The phases
 > below that shipped CLI commands which started processes — **Phase
@@ -597,6 +598,52 @@ idle past the linger window waits for the next session activity (next
 CLI prompt or turn). Waking an idle interactive `claude` would require
 PTY/tmux/stdin tricks — permanently banned.
 
+### Phase 8.5 — Channels sharing: `orc channel` (Issue #11 O4) — ✓ DONE (2026-07-06)
+
+**Goal.** Erase Phase 8.4's accepted idle blind spot for sessions the
+user is willing to start with sharing in mind, using Claude Code's own
+**Channels** mechanism (research preview, claude v2.1.80+) — option O4
+of Issue #11, chosen precisely because claude spawns the channel
+server itself, so open-rc's no-spawn rule holds (O1/O2 spawned and
+were rejected).
+
+**Mechanics (still zero spawning by open-rc).**
+
+- `orc channel` (`src/cli/channel.ts`) is an MCP channel server
+  (`src/channel/mcp.ts`, stdio) that claude spawns from the
+  `mcpServers.orc` entry `make setup` registers in `~/.claude.json`
+  (`scripts/install-channel.ts`, idempotent). The user enables it per
+  session: `claude --dangerously-load-development-channels server:orc`.
+- Browser prompts (relayed over the same `/agent` WS) are pushed into
+  the session as `notifications/claude/channel` events —
+  **instantly, even while the session is idle**. No hook window, no
+  queue, no terminal capture; the Stop hook short-circuits on
+  `channel.marker`.
+- Permission relay: tool-approval dialogs mirror to the browser as
+  `permission_request`; the viewer's verdict returns as a channel
+  permission notification (first answer, terminal or remote, wins).
+- Session→browser stays the transcript replay + tail shared with
+  `orc attach`, discovered lazily (`src/channel/discover.ts`) because
+  claude spawns the channel before the session writes its first line.
+
+**Definition of done — ✓ met (verified empirically 2026-07-06, claude
+v2.1.201).** (a) Prompt delivered to a fully idle session that had
+never taken a turn — no blind spot; (b) permission-relay round trip —
+browser approved a Bash/curl call, terminal dialog closed, tool ran;
+(c) **third-party provider**: MiniMax-M3 via
+`ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic` registered the
+channel and answered an idle channel prompt — the core use case Remote
+Control cannot serve. Go.
+
+**Accepted risk.** Channels is a research preview: the
+`--dangerously-load-development-channels` flag is required (custom
+channels are not on Anthropic's allowlist), the protocol contract may
+change between CLI releases, and Team/Enterprise orgs must enable
+`channelsEnabled`. Channel events are dropped silently when the
+channel isn't enabled — the bridge emits an `error` frame after ~20 s
+of visible silence. `/orc` (Phase 8.4) stays shipped as the fallback
+for sessions already running without the flag.
+
 ---
 
 ## Things we explicitly will not do
@@ -641,4 +688,5 @@ here so future contributors don't accidentally scope-creep into them.
 | Server accidentally re-introduces process launching | 7+ | CI check: a static scan of `src/serve.ts`, `src/cli.ts`, and `src/ws.ts` for process-launch calls must return zero. Block the PR if it doesn't. |
 | "Just add a bridge command, it's small" temptation | 8+ | The one sanctioned bridge is `attach-orc`, and it is structurally incapable of spawning (no child_process anywhere). Any new helper must keep that property. |
 | Stop-hook linger blocks the terminal after each turn | 8.4 | Linger runs only while a viewer is attached, defaults to 45 s, is env-tunable (`ORC_STOP_LINGER_MS`), and Esc skips it. |
-| Browser message to an idle session past the linger window | 8.4 | Documented, accepted: delivered at the next session activity. Never "fixed" with PTY/tmux. |
+| Browser message to an idle session past the linger window | 8.4 | Documented, accepted: delivered at the next session activity. Never "fixed" with PTY/tmux. `orc channel` (8.5) removes the blind spot for sessions started with Channels enabled. |
+| Channels protocol changes / preview flag removed | 8.5 | Research preview, documented as such. `/orc` (8.4) remains the flag-free fallback; the channel bridge is additive and can be re-pinned or dropped without touching the relay. |

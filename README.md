@@ -84,18 +84,25 @@ upgrades, troubleshooting: [`docs/docker.md`](./docs/docker.md).
 ## Drive a `claude` session from your browser
 
 open-rc **shares an already-running `claude` — it never starts one.**
-There are two ways to feed the relay:
+There are three ways to feed the relay:
 
 1. **`/orc` (recommended).** Share the interactive Claude Code
    session you are already sitting in — history, live stream, and
    two-way prompts — with one slash command. No spawning: the bridge
    reads the session's own transcript and the Claude Code hooks carry
    browser prompts back in.
-2. **Bring your own bridge.** Run `claude` in stream-json mode
+2. **`orc channel` (research preview).** Start the session with
+   Claude Code's Channels mechanism enabled and browser prompts land
+   **instantly, even while the session is idle**, and tool-permission
+   dialogs relay to the browser. `claude` itself spawns the channel
+   server — open-rc still spawns nothing. See
+   [Share via Channels](#share-via-channels-orc-channel--research-preview).
+3. **Bring your own bridge.** Run `claude` in stream-json mode
    yourself and pipe its stdio to the relay's `/agent` WebSocket.
 
 Run `make setup` once; it installs the `orc` launcher on your
-PATH, the open-rc Claude Code hooks, and the `/orc` command:
+PATH, the open-rc Claude Code hooks, the `/orc` command, and the
+`orc` channel MCP server entry in `~/.claude.json`:
 
 ```bash
 make setup          # launcher + hooks + /orc (override BIN_DIR)
@@ -194,6 +201,61 @@ flowchart LR
 
 Stop sharing by killing the background bridge task (or just end the
 session — the SessionEnd hook tells the bridge to unregister).
+
+### Share via Channels (`orc channel`) — research preview
+
+`/orc` shares a session **after the fact**, and browser messages ride
+turn boundaries (the Stop-hook window). `orc channel` takes the other
+trade: enable it when the session **starts**, and browser messages are
+pushed straight into the running session — instantly, even while it
+sits completely idle — with no hook window, no queue, and no terminal
+capture. Tool-permission dialogs also relay to the browser: approve or
+deny from the modal and the terminal dialog closes (first answer,
+terminal or remote, wins).
+
+The mechanism is Claude Code's **Channels** (research preview, claude
+v2.1.80+): `orc channel` is an MCP *channel server* that `claude`
+itself spawns — exactly like any user-installed MCP server, so
+open-rc's no-spawn rule holds untouched. `make setup` registers the
+`mcpServers.orc` entry in `~/.claude.json`; then start the session
+with the channel enabled:
+
+```bash
+claude --dangerously-load-development-channels server:orc
+```
+
+Browser prompts (relayed from `serve` over the same `/agent`
+WebSocket) arrive in the session as `<channel source="orc">` events;
+permission dialogs mirror out as `permission_request` frames and your
+verdict returns as a channel notification. Session→browser is still
+the transcript replay + tail shared with `orc attach` — discovered
+lazily, because claude spawns the channel before the session writes
+its first transcript line.
+
+Research-preview caveats, worth knowing:
+
+- The `--dangerously-load-development-channels` flag is required —
+  custom channels are not on Anthropic's allowlist during the
+  preview — and the protocol contract may change between CLI
+  releases. Team/Enterprise orgs must enable `channelsEnabled`.
+- Channel events are dropped **silently** if the session was started
+  without the flag; the bridge emits an `error` frame after ~20 s of
+  visible silence so viewers are never left staring.
+- Available with claude.ai auth, a Console API key, or a third-party
+  Anthropic-compatible `ANTHROPIC_BASE_URL` (unlike Remote Control,
+  which is locked to claude.ai OAuth). Not available on
+  Bedrock/Vertex/Foundry.
+
+Verified end-to-end on 2026-07-06 (claude v2.1.201): idle-session
+delivery with no blind spot, the permission-relay round trip, and —
+the core use case Remote Control cannot serve — a **third-party
+provider**: MiniMax-M3 via
+`ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic` registered the
+channel and answered an idle browser prompt.
+
+Keep both paths installed — they are complementary: `/orc` for the
+session you are already sitting in, `orc channel` for sessions you
+start with instant remote delivery in mind.
 
 ### Bring your own bridge
 
@@ -363,6 +425,16 @@ orc attach          # normally started by the /orc command
   --client-id        <s>   Explicit clientId (default: the session id)
   # env: ORC_BASE_URL      base URL of a remote serve
 
+orc channel         # spawned BY claude itself (an MCP channel server
+                    # registered by make setup) — never run it by hand;
+                    # enable per session with
+                    # `claude --dangerously-load-development-channels server:orc`
+  --server           <u>   /agent WebSocket URL (default from ORC_BASE_URL,
+                           else ws://127.0.0.1:7322/agent)
+  --label            <s>   Sidebar label (default user@host (channel))
+  --cwd              <p>   Project dir (default: where claude spawned it)
+  --client-id        <s>   Explicit clientId (default: stable per host+cwd)
+
 orc hook <stop|prompt|end>   # internal: Claude Code hook handlers,
                                  # wired into ~/.claude/settings.json by
                                  # make setup; hook JSON arrives on stdin
@@ -374,7 +446,8 @@ That is the entire CLI surface. There is no `open-rc client` and no
 
 > Note: none of these launch a process. `serve`/`hub` are relays,
 > `tui` is a `/ws` client, `orc attach` reads the transcript your own
-> `claude` writes, and `hook` handlers exchange files with the bridge.
+> `claude` writes, `channel` is itself spawned by claude's own MCP
+> machinery, and `hook` handlers exchange files with the bridge.
 
 ---
 
@@ -409,12 +482,16 @@ sidebar repopulates.
 
 ```
 src/
-├── cli.ts                       # arg parsing, command dispatch (serve, hub, tui, attach, hook)
+├── cli.ts                       # arg parsing, command dispatch (serve, hub, tui, attach, channel, hook)
 ├── cli/
 │   ├── flags.ts                 # shared --k=v / kebab→camel flag parser
 │   ├── tui.ts                   # terminal /ws client — shares a session with the browser
 │   ├── attach.ts                # transcript bridge — shares a running session, spawns nothing
+│   ├── channel.ts               # `orc channel` — Channels MCP server glued to the /agent bridge
 │   └── attach-hooks.ts          # `orc hook stop|prompt|end` Claude Code hook handlers
+├── channel/
+│   ├── mcp.ts                   # MCP channel server half (claude/channel + permission relay)
+│   └── discover.ts              # lazy transcript discovery (channel starts before the session writes)
 ├── transcript/
 │   ├── locate.ts                # cwd → ~/.claude/projects/<munged>/<newest>.jsonl
 │   ├── translate.ts             # transcript JSONL entry → BridgeFrame
@@ -455,7 +532,8 @@ commands/
 scripts/
 ├── build.ts                     # DISTRIBUTION ONLY — cross-compile to linux/darwin/windows
 ├── build-icons.ts               # Rasterise ui/icon.svg into the PWA + iOS PNGs (dev-only)
-└── install-hooks.ts             # make setup helper: hooks + /orc into ~/.claude
+├── install-hooks.ts             # make setup helper: hooks + /orc into ~/.claude
+└── install-channel.ts           # make setup helper: mcpServers.orc into ~/.claude.json
 ```
 
 tests/                           # unit + integration (no e2e yet)
@@ -601,7 +679,7 @@ provider-translation work, if needed, lives outside this repo.
 | --------- | -------------------------------------- | ------------------ |
 | Deepseek  | TBD — needs verification               | Investigation      |
 | GLM       | TBD — needs verification               | Investigation      |
-| MiniMax   | TBD — needs verification               | Investigation      |
+| MiniMax   | `https://api.minimax.io/anthropic`     | **Verified 2026-07-06** — channel sharing end-to-end (MiniMax-M3) |
 
 See [`docs/architecture.md` §8.1](./docs/architecture.md) for what we
 still need to learn per provider.
@@ -626,9 +704,12 @@ still need to learn per provider.
 
 **Phases 1–8 complete.** `orc serve` is a pure WebSocket relay
 that never starts or manages `claude`. The CLI exposes `serve`, `hub`,
-`tui`, `attach`, and `hook` (binary name: `orc`); none of them launch a process.
-`/orc` shares the interactive Claude Code session you are
-already in — transcript-tail out, hook-delivery in. (An earlier
+`tui`, `attach`, `channel`, and `hook` (binary name: `orc`); none of
+them launch a process (`channel` is itself spawned by claude's MCP
+machinery). `/orc` shares the interactive Claude Code session you are
+already in — transcript-tail out, hook-delivery in; `orc channel`
+shares a session started with Channels enabled — instant delivery,
+even while idle. (An earlier
 `attach-orc` that *spawned* `claude`, and `attach-tmux`, were removed
 as out of scope; the current `orc attach` shares an existing session
 and spawns nothing.)
@@ -644,6 +725,7 @@ and spawns nothing.)
 | 7     | **Relay pivot** — server never starts processes     | ✓      |
 | 8.1   | PWA install + offline app-shell cache     | ✓      |
 | 8.2   | **Shared sessions** — `/orc` transcript bridge + hook delivery | ✓ |
+| 8.5   | **Channels sharing** — `orc channel` (research preview, instant delivery) | ✓ |
 
 ### UI at a glance
 

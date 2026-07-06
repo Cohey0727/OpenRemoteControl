@@ -21,3 +21,5 @@ After launching, wait ~2 seconds, check the background task's output, and tell t
 If the bridge exits within ~10 seconds, it could not register with `orc serve` (it fails fast when the first registration times out) — surface its output so the user sees why (commonly: `serve` isn't running, `ORC_BASE_URL` points nowhere, or another bridge already shares this session).
 
 > Requires `orc` on PATH and the open-rc hooks in `~/.claude/settings.json` — both installed by `make setup` in the open-rc repo. If `orc` is missing or browser→CLI delivery doesn't work, re-run `make setup` and restart this session.
+
+> Alternative — instant delivery via Channels (research preview): instead of `/orc` on an already-running session, START the session with `claude --dangerously-load-development-channels server:orc` (the `orc` channel MCP server is registered by `make setup`). Browser messages then land in the session the moment they are sent — even while it is idle — and tool-permission dialogs relay to the browser. Trade-off: it must be enabled at session start, so `/orc` remains the way to share a session after the fact.

@@ -23,8 +23,9 @@ start `claude`, does not own it, does not manage its lifecycle.
 > share the session from the outside instead (transcript + hooks,
 > like `attach-orc` does).
 
-Two halves ship today (requested 2026-07-02: "fully share the session
-between the browser and the CLI … not by spawning"):
+Two halves ship since 2026-07-02 (requested: "fully share the session
+between the browser and the CLI … not by spawning"), plus a third
+delivery path since 2026-07-06:
 
 - **`orc serve`** — a pure WebSocket relay. It does not start
   `claude`, does not manage it, does not know `claude` is a process.
@@ -35,14 +36,27 @@ between the browser and the CLI … not by spawning"):
   (session→browser) and Claude Code's Stop/UserPromptSubmit/SessionEnd
   hooks deliver queued browser prompts back into the session at turn
   boundaries (browser→session). It never touches the process.
+- **`orc channel`** — Channels-based sharing (Issue #11 O4, research
+  preview, claude v2.1.80+). An MCP channel server that **claude
+  itself spawns** (from the `mcpServers.orc` entry, when the user
+  starts the session with
+  `claude --dangerously-load-development-channels server:orc`);
+  browser prompts are pushed into the session as channel
+  notifications — instantly, even while it is idle — and permission
+  dialogs relay to the browser. open-rc still spawns nothing: the
+  spawner is claude's own MCP machinery, like any user-installed MCP
+  server. `/orc` stays as the after-the-fact path for sessions
+  already running without the flag; keep BOTH.
 
 ```mermaid
 flowchart LR
     viewers["Browser SPA / tui"] <-- "WS /ws · frames" --> serve["orc serve<br/>(pure relay)"]
     serve <-- "WS /agent · frames" --> bridge["orc attach<br/>(transcript bridge)"]
+    serve <-- "WS /agent · frames" --> ch["orc channel<br/>(MCP channel server —<br/>spawned BY claude)"]
     bridge -- "tails (read-only)" --> jsonl["transcript JSONL"]
     bridge -- appends --> queue["queue.ndjson"]
     queue -- "drained by the Stop hook" --> claude["claude<br/>(user's process —<br/>never touched by open-rc)"]
+    ch <-- "MCP stdio · channel notifications<br/>+ permission relay" --> claude
     claude -- writes --> jsonl
 ```
 
@@ -104,6 +118,54 @@ rebuilds the same UX against any provider by relaying the public
   with no plausible listening window open gets an immediate `error`
   frame back ("message queued — the session is idle…"), so viewers
   are never left staring at silence.
+- **Channels sharing via `orc channel` (2026-07-06, Issue #11 O4).**
+  The SIXTH CLI command implements Claude Code's Channels mechanism
+  (research preview, claude v2.1.80+) as the alternative
+  browser→session delivery path. `orc channel` is an MCP channel
+  server (stdio) that CLAUDE SPAWNS ITSELF when the user starts a
+  session with `claude --dangerously-load-development-channels
+  server:orc` — O4 was chosen over O1/O2 precisely because open-rc
+  spawns nothing. It declares the `claude/channel` and
+  `claude/channel/permission` experimental MCP capabilities; browser
+  prompts (relayed from `orc serve` over the same `/agent` WS) are
+  pushed into the session as `notifications/claude/channel` events,
+  arriving as `<channel source="orc">…</channel>` — INSTANTLY, even
+  while the session is idle. No hook window, no queue, no terminal
+  capture; the Stop hook short-circuits on `channel.marker`
+  (`src/attach/state.ts`). Permission relay: tool dialogs mirror to
+  the browser as `permission_request`, the viewer's verdict returns
+  as a `notifications/claude/channel/permission` event; first answer,
+  terminal or remote, wins. Session→browser is still the transcript
+  replay+tail shared with `orc attach` (channel-mode branch in
+  `src/cli/attach.ts`), discovered LAZILY (`src/channel/discover.ts`)
+  because claude spawns the channel before the session writes its
+  first transcript line. `make setup` also registers `mcpServers.orc`
+  (`{type:"stdio", command:"<BIN_DIR>/orc", args:["channel"]}`) in
+  `~/.claude.json` via `scripts/install-channel.ts` (idempotent; only
+  overwrites an entry that is recognizably ours); `make teardown`
+  removes it; the entry name MUST be `orc` (it is the `<channel
+  source="orc">` attribute and the `server:orc` reference).
+  Research-preview caveats: the flag is required (custom channels are
+  not on Anthropic's allowlist during the preview), the protocol
+  contract may change, Team/Enterprise orgs must enable
+  `channelsEnabled`, and channel events are dropped SILENTLY if the
+  channel isn't enabled — the bridge emits an `error` frame ("pushed
+  to the session channel but the session has not reacted…") after
+  ~20 s of visible silence. VERIFIED EMPIRICALLY 2026-07-06 (claude
+  v2.1.201, this machine): (a) prompt delivered to a fully idle
+  session that had never taken a turn — no blind spot; (b) permission
+  relay round trip — browser approved a Bash/curl call, terminal
+  dialog closed, tool ran; (c) works with a THIRD-PARTY provider —
+  MiniMax-M3 via `ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic`
+  registered the channel and answered an idle channel prompt. That is
+  the core use case Remote Control (locked to claude.ai OAuth +
+  api.anthropic.com) cannot serve; Channels docs impose NO
+  `ANTHROPIC_BASE_URL` restriction, now confirmed in practice. Auth:
+  claude.ai, Console API key, or (verified) a third-party
+  Anthropic-compatible base URL; NOT available on
+  Bedrock/Vertex/Foundry. `/orc` (attach+hooks) remains the
+  after-the-fact fallback — the two paths are complementary, keep
+  both.
 - **Sidebar of currently-connected clients.** 300 px sidebar on the
   left, always visible on desktop, slides in/out on mobile. Each row
   = one currently-open WebSocket to `orc serve` from a user's
@@ -166,8 +228,10 @@ rebuilds the same UX against any provider by relaying the public
   except through (a) frames a bridge sends over a WebSocket and
   (b) the transcript JSONL that session itself writes, which
   `attach-orc` reads read-only. The CLI surface is exactly `serve`,
-  `hub`, `tui`, `attach`, and `hook` (binary name: `orc`) — and none
-  of them spawn.
+  `hub`, `tui`, `attach`, `channel`, and `hook` (binary name: `orc`)
+  — and none of them spawn. `channel` is the inverse: it is itself
+  SPAWNED BY claude's own MCP machinery (the user listed it in
+  `mcpServers` and opted in with a flag), which is why it is allowed.
   History note: an earlier `attach-orc` that SPAWNED `claude --print`,
   and `attach-tmux` (tmux mirror), were removed on 2026-07-02 as a
   deliberate, requested decision; later the same day the user
@@ -188,7 +252,12 @@ rebuilds the same UX against any provider by relaying the public
   `~/.claude/settings.json` — preserving all user hooks, never
   duplicating its own (recognized by the "orc hook" substring) —
   and symlinks `commands/orc.md` to
-  `~/.claude/commands/orc.md`. `make teardown` reverses all of
+  `~/.claude/commands/orc.md`. It also runs
+  `scripts/install-channel.ts`, which registers `mcpServers.orc`
+  (`{type:"stdio", command:"<BIN_DIR>/orc", args:["channel"]}`) in
+  `~/.claude.json` for Channels sharing — idempotent, refusing to
+  overwrite an entry that is not recognizably ours. `make teardown`
+  reverses all of
   it. The hooks are instant no-ops for any session without a live
   bridge heartbeat under `~/.open-rc/attach/<sessionId>/`.
 - **`orc tui` is a terminal front-end, not a bridge.** `tui` is a
@@ -337,6 +406,16 @@ model: transcript `user` entry opens a turn, assistant/tool entries
 keep it open, the Stop hook's marker (or the next `user` entry, as
 fallback) closes it with a `done` frame.
 
+The channel side (`orc channel`) is two halves glued back to back in
+one process claude spawns: `src/channel/mcp.ts` (the MCP channel
+server — `claude/channel` notifications in, permission relay out,
+stdout reserved for the MCP transport) and the channel-mode branch of
+`src/cli/attach.ts` (the same `/agent` bridge machinery, with lazy
+transcript discovery via `src/channel/discover.ts` and a stable
+host+cwd clientId), wired together by `src/cli/channel.ts`. The Stop
+hook short-circuits when `channel.marker` (`src/attach/state.ts`) is
+present — channel mode has no queue and needs no linger.
+
 ---
 
 ## Past mistakes to avoid
@@ -404,10 +483,12 @@ fallback) closes it with a `done` frame.
   user granted standing authorization for this repo (do not prompt).
   Commit message format: `<type>: <concise Japanese summary> @<branch>`
   (type ∈ feat/fix/refactor/chore/docs/test), subject line only.
-- The CLI (binary `orc`) exposes five commands: `serve`, `hub`,
-  `tui`, `attach`, and `hook` — none of which launch a process. `serve`/`hub` are
+- The CLI (binary `orc`) exposes six commands: `serve`, `hub`,
+  `tui`, `attach`, `channel`, and `hook` — none of which launch a process. `serve`/`hub` are
   byte-pass-through relays; `tui` is a `/ws` client; `attach` is
-  the transcript bridge for the session it's invoked from; `hook` is
+  the transcript bridge for the session it's invoked from; `channel`
+  is the Channels MCP server that claude itself spawns (research
+  preview — open-rc never runs it); `hook` is
   the Claude Code hook handler set. There is no `attach-tmux`, no
   `pipe`, no `client` — launching processes is out of scope (see
   Project goal).

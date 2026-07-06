@@ -5,8 +5,9 @@
 > processes and manages no `claude`; it does not even know `claude` is
 > a process. The user runs `claude` themselves and brings their own
 > bridge to a WebSocket.
-> **Last revised:** 2026-07-03 — pure relay + the spawn-free
-> `attach-orc` shared-session bridge (§3.5).
+> **Last revised:** 2026-07-06 — pure relay + the spawn-free
+> `attach-orc` shared-session bridge (§3.5) + the Channels-based
+> `orc channel` bridge (§3.6, research preview).
 
 ---
 
@@ -196,10 +197,12 @@ Keeping process startup outside open-rc is deliberate:
   beyond the live client map.
 - **The server's surface doesn't grow.** The server ships exactly
   `serve` and `hub` and stays a pure relay no matter what bridge shape
-  feeds it. Client-side, two helpers ship: `tui` (a `/ws` client that
-  starts nothing) and `attach-orc` (a transcript bridge that starts
+  feeds it. Client-side, three helpers ship: `tui` (a `/ws` client that
+  starts nothing), `attach-orc` (a transcript bridge that starts
   nothing — it reads the JSONL the user's own session writes and
-  exchanges files with the `orc hook` handlers; see §3.5). Two
+  exchanges files with the `orc hook` handlers; see §3.5), and
+  `channel` (an MCP channel server that claude itself spawns; see
+  §3.6). Two
   earlier helpers that launched subprocesses — the spawning
   `attach-orc` and `attach-tmux` — were built and removed on
   2026-07-02; the same day's `/orc` goal was then implemented
@@ -258,6 +261,94 @@ Components:
 
 The bridge holds no conversation state of its own — kill it and
 nothing is lost; re-running `/orc` re-replays the transcript.
+
+### 3.6 The `orc channel` Channels bridge (research preview)
+
+Issue #11 O4. Claude Code's **Channels** mechanism (research preview,
+claude v2.1.80+) turns an MCP server into a push channel: an MCP
+server declaring the experimental `claude/channel` capability can emit
+`notifications/claude/channel` events, and claude injects each one
+into the running session as `<channel source="orc">…</channel>` —
+**immediately, even while the session sits idle**. That property is
+exactly the blind spot the hook path accepts (§3.5's "message queued —
+session is idle"), so both paths ship, complementary: `/orc` shares an
+already-running session after the fact; `orc channel` must be enabled
+at session START and delivers instantly with no hook window, no queue,
+and no terminal capture.
+
+The no-spawn rule holds untouched: `claude` itself spawns
+`orc channel` through its own MCP machinery, exactly like any
+user-installed MCP server. `make setup` registers the entry
+(`scripts/install-channel.ts` → `mcpServers.orc` in `~/.claude.json`,
+idempotent, only ever overwriting an entry that is recognizably ours);
+the user opts in per session with
+`claude --dangerously-load-development-channels server:orc`. The entry
+name MUST be `orc` — it is the `source` attribute of the injected
+`<channel>` tags and the `server:orc` reference in the flag.
+
+```mermaid
+flowchart LR
+    viewers["Browser SPA / tui"] <-- "WS /ws" --> serve["orc serve<br/>(pure relay)"]
+    serve <-- "WS /agent · frames" --> ch["orc channel<br/>(MCP channel server —<br/>spawned BY claude)"]
+    ch <-- "MCP stdio<br/>channel notifications ·<br/>permission relay" --> claude["claude<br/>(user's process)"]
+    ch -- "replay + tail (read-only,<br/>discovered lazily)" --> jsonl["transcript JSONL"]
+    claude -- writes --> jsonl
+```
+
+Composition — two halves glued back to back inside one process:
+
+- **MCP half** (`src/channel/mcp.ts`, `@modelcontextprotocol/sdk`,
+  stdio transport): declares `claude/channel` +
+  `claude/channel/permission`; pushes viewer prompts into the session
+  as channel notifications; receives every mirrored tool-approval
+  dialog as a `permission_request` notification and returns the
+  viewer's allow/deny verdict as a
+  `notifications/claude/channel/permission` event (first answer,
+  terminal or remote, wins). stdout belongs to the MCP transport —
+  all logging goes to stderr.
+- **Bridge half** (`src/cli/channel.ts` gluing into the channel-mode
+  branch of `src/cli/attach.ts`): the same `/agent` machinery as
+  `orc attach` — register, transcript replay + tail for the
+  session→browser direction, `prompt`/`permission_response` frames
+  inbound. Registration retries forever (claude may start before
+  `orc serve` is up), and the clientId is a stable hash of host+cwd
+  (the session id is unknown at spawn time).
+- **Lazy transcript discovery** (`src/channel/discover.ts`): claude
+  spawns the channel before the session writes its first transcript
+  line, so "newest JSONL in the project dir" would find a PREVIOUS
+  session. The channel instead polls for the first `*.jsonl` whose
+  mtime is newer than its own start time. (Accepted PoC limitation:
+  two sessions started concurrently in the same cwd can race this.)
+- **Hook short-circuit** (`channel.marker` in `src/attach/state.ts`,
+  checked by `src/cli/attach-hooks.ts`): while a session is bridged in
+  channel mode the Stop hook exits immediately — there is no queue to
+  drain and any linger would only hold the terminal for nothing.
+
+Failure visibility: channel events are dropped **silently** by claude
+when the session was started without the
+`--dangerously-load-development-channels` flag, so the bridge watches
+for a transcript reaction after each pushed prompt and emits an
+`error` frame ("pushed to the session channel but the session has not
+reacted…") after ~20 s of visible silence — viewers are never left
+staring.
+
+Research-preview caveats: the flag is required because custom channels
+are not on Anthropic's allowlist during the preview; the protocol
+contract may change between CLI releases; Team/Enterprise orgs must
+enable `channelsEnabled`. Auth: claude.ai login, Console API key, or a
+third-party Anthropic-compatible `ANTHROPIC_BASE_URL` — Channels
+imposes no base-URL restriction (unlike Remote Control). Not available
+on Bedrock/Vertex/Foundry.
+
+**Verified empirically 2026-07-06 (claude v2.1.201):** (a) a prompt
+delivered to a fully idle session that had never taken a turn — no
+blind spot; (b) the permission-relay round trip (browser approved a
+Bash/curl call, the terminal dialog closed, the tool ran); (c) a
+**third-party provider** — MiniMax-M3 via
+`ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic` registered the
+channel and answered an idle channel prompt. That last point is the
+core use case Remote Control (locked to claude.ai OAuth +
+api.anthropic.com) cannot serve.
 
 ---
 
@@ -661,9 +752,10 @@ wait for them to re-register.
 | Term                 | Meaning                                                            |
 | -------------------- | ------------------------------------------------------------------ |
 | **CLI**              | Anthropic's `claude` binary, run by the user, never by open-rc.    |
-| **`orc serve`**  | The pure WS relay — the server half of open-rc (the CLI also ships `hub`, `tui`, `attach-orc`, `hook`). |
+| **`orc serve`**  | The pure WS relay — the server half of open-rc (the CLI also ships `hub`, `tui`, `attach-orc`, `channel`, `hook`). |
 | **Hub**              | `orc hub` — public deployment accepting remote clients (unchanged from prior phases). |
-| **Bridge**           | Whatever feeds `/agent`. First-party: `orc attach`, a spawn-free transcript bridge for the session it is invoked from (§3.5). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
+| **Bridge**           | Whatever feeds `/agent`. First-party: `orc attach`, a spawn-free transcript bridge for the session it is invoked from (§3.5), or `orc channel`, an MCP channel server claude itself spawns (§3.6). Or user-owned: any process that pipes a stream-json `claude`'s stdio to a WebSocket. (The old spawning `attach-orc`/`attach-tmux` helpers were removed as out of scope.) |
+| **Channel**          | Claude Code's Channels mechanism (research preview): an MCP server with the `claude/channel` capability whose notifications are injected into the running session as `<channel source="orc">` events — instantly, even while idle. `orc channel` implements it (§3.6). |
 | **stream-json**      | Public Agent SDK wire format. JSONL on stdout of `claude --print`. |
 | **`/ws` WS**         | The WS route on the server. Bridges and browsers both connect here. |
 | **clientId**         | The id a bridge registers with the server (also used by the browser as `sessionId` for backwards compatibility). |

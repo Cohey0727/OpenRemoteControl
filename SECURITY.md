@@ -71,8 +71,10 @@ forwards user prompts and tool-call requests to Claude Code.
   subprocess: no process-creation calls (`fork`, `exec`, or the
   Bun/Node equivalents), no walking `ps`, `lsof`, or `/proc`, no
   signalling (SIGTERM, SIGKILL, SIGINT, SIGHUP), no PTY, no tmux. The
-  entire CLI is `serve`, `hub`, `tui`, `attach-orc`, and `hook`, each
-  of which runs only its own process. The user runs `claude`
+  entire CLI is `serve`, `hub`, `tui`, `attach-orc`, `channel`, and
+  `hook`, each
+  of which runs only its own process (`orc channel` is itself spawned
+  BY claude's own MCP machinery — open-rc never runs it). The user runs `claude`
   themselves; a `claude` in another terminal is untouched unless its
   own session invokes `/orc`. There is no
   `/api/external-sessions` endpoint, no `claim_external_session` WS
@@ -108,6 +110,42 @@ Know what you are enabling:
   Code itself writes.
 - **`make teardown`** removes the hooks and the `/orc` command
   again.
+
+## Channel-based sharing (`orc channel`) surface
+
+`orc channel` (Issue #11 O4, research preview) is the alternative
+delivery path: browser prompts reach the session as MCP channel
+notifications the moment they are sent, and tool-permission dialogs
+relay to the browser. The exposure it adds:
+
+- **claude spawns it, not open-rc.** The `mcpServers.orc` entry
+  (`make setup` writes it to `~/.claude.json`) is only loaded when the
+  user starts a session with `claude
+  --dangerously-load-development-channels server:orc`. The flag is a
+  claude-side, explicit opt-in; being in the config is not enough. The
+  no-spawn invariant is intact — claude's own MCP machinery is the
+  spawner.
+- **Instant prompt injection.** As with `/orc`, anyone who can send
+  `send` frames to serve can push prompts into the running session —
+  here with no hook window at all, so exposing serve without auth is
+  the same "typewriter into your Claude session" risk. `/agent` stays
+  ungated by design; a bridge can only ever register and drive its own
+  session, never read another's.
+- **Remote permission verdicts.** With permission relay on, a viewer
+  can approve or deny tool calls (`Bash`, `Write`, …) from the
+  browser. Those verdicts come only from viewers already authenticated
+  on `/ws` (the `ORC_USER`/`ORC_PASSWORD` gate when set); the local
+  terminal dialog stays open in parallel and the first answer wins.
+  Only expose serve to people you trust to approve tool use in your
+  session.
+- **Silent-drop honesty.** If channels aren't enabled for the session
+  (flag missing, org policy off), channel events are dropped with no
+  error from claude; the bridge surfaces that as an `error` frame
+  after ~20 s of visible silence so a viewer is never left guessing.
+- **Research preview.** The `--channels` syntax and channel protocol
+  contract may change; custom channels require the development flag
+  until they are on Anthropic's allowlist. `make teardown` removes the
+  `mcpServers.orc` entry.
 
 ## Reporting a vulnerability
 
