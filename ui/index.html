@@ -117,7 +117,14 @@
            viewport height across any implicit rows, so the sidebar never
            reaches the bottom. minmax(0, …) lets inner panes scroll. */
         grid-template-rows: minmax(0, 1fr);
+        /* 100vh is the LARGE viewport on mobile — it includes the area
+           behind the browser's URL/tool bars, so a bottom-pinned
+           composer sits below the visible area and looks missing.
+           100dvh tracks the *visible* viewport (shrinks with the URL
+           bar), keeping the composer on-screen. 100vh stays as the
+           fallback for browsers without dvh. (reported 2026-07-06) */
         height: 100vh;
+        height: 100dvh;
         width: 100vw;
         position: relative;
         overflow: hidden;
