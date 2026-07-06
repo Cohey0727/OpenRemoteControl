@@ -306,7 +306,11 @@ configs to maintain), `dprint` (good, less ecosystem).
 - **Minimal runtime dependencies.** Bun covers HTTP, WS, subprocess,
   fs, sqlite, and crypto natively. We do add focused deps when Bun
   doesn't cover the surface area: `web-push` for VAPID push (Phase 5),
-  `zod` for wire-protocol validation (Phase 1+). Adding a dep is a
+  `zod` for wire-protocol validation (Phase 1+), and
+  `@modelcontextprotocol/sdk` (^1.29.0) for the `orc channel` MCP
+  channel server (Phase 8.5 — Anthropic's own reference SDK; the
+  stdio JSON-RPC transport and capability negotiation are not worth
+  hand-rolling). Adding a dep is a
   deliberate, reviewable choice.
 - After v0.1, deps are allowed but reviewed for: bundle size (SPA),
   startup time (server), maintenance status, license (MIT / Apache-2.0 /
@@ -430,6 +434,7 @@ wire without a major release.
 | Logging        | console                    | pino, winston        |
 | Wire schemas   | zod                        | ajv, json-schema, TypeBox |
 | Push           | web-push                   | pushpad, OneSignal SDK |
+| Channel MCP    | @modelcontextprotocol/sdk  | hand-rolled JSON-RPC |
 | Tests          | bun test                   | vitest, Playwright   |
 | Lint / format  | Biome                      | ESLint + Prettier    |
 | Distribution   | bun build --compile (opt.) | npm pkg, Docker      |
