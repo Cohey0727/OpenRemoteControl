@@ -20,6 +20,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   appendQueue,
   attachDirFor,
+  browserTurnMarkerExists,
   channelMarkerExists,
   createAttachDir,
   queueNonEmpty,
@@ -397,6 +398,32 @@ describe('runChannel', () => {
       await browser.waitFor((m) => m.type === 'text' && m.text === 'hello from claude');
       const dir = attachDirFor('sess-42', attachBase);
       expect(await channelMarkerExists(dir)).toBe(true);
+
+      // A `<channel>` prompt landing in the transcript is filtered by
+      // translate.ts (it starts with '<'), so it never emits a frame.
+      // The bridge must still treat it as delivery — otherwise the
+      // delivery watchdog false-positives while the session sits on a
+      // permission dialog. Append a fresh channel prompt with NO
+      // assistant reply after it and assert no `error` frame follows.
+      const channelEntry = JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: '<channel source="orc">please wait here</channel>' },
+        timestamp: new Date().toISOString(),
+      });
+      await writeFile(transcript, `${entries.join('\n')}\n${channelEntry}\n`);
+      // browser-turn.marker is the observable proof the bridge saw the
+      // `<channel>` entry (it's set on the same line that bumps the
+      // delivery-watch clock).
+      const deadline = Date.now() + 2000;
+      let sawMarker = false;
+      while (Date.now() < deadline) {
+        if (await browserTurnMarkerExists(dir)) {
+          sawMarker = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(sawMarker).toBe(true);
 
       browser.ws.close();
     } finally {

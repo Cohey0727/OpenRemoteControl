@@ -382,8 +382,15 @@ export async function runAttachOrc(
         // remote-driven now, so flip browser-driven mode (it routes
         // AskUserQuestion to the viewers instead of the terminal
         // selector; a prompt typed in the terminal clears it again).
+        // It also counts as the session REACTING: the `<channel>`
+        // prompt is a `<…>`-wrapped synthetic entry that translate.ts
+        // filters out, so it never reaches `emit`; bump lastEmitAt
+        // here so the delivery watchdog doesn't false-positive while
+        // the session sits on a permission dialog (no assistant frames
+        // flow until it's answered).
         if (channel && dir && line.includes('"type":"user"') && line.includes('<channel source=')) {
           void touchBrowserTurnMarker(dir).catch(() => {});
+          lastEmitAt = Date.now();
         }
         const step = foldLine(turn, line);
         turn = step.state;
