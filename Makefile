@@ -199,8 +199,12 @@ uninstall: ## No-op (kept for symmetry with install)
 # Run / interact
 # ---------------------------------------------------------------------------
 
+.PHONY: ui-build
+ui-build: ## Build the React SPA (Vite) into ui/dist
+	@bun run build:ui
+
 .PHONY: serve
-serve: logo relay-diagram serve-hints ## Start the local WebSocket relay + SPA
+serve: logo relay-diagram serve-hints ui-build ## Build the SPA, then start the relay + SPA
 	@bun run $(BIN) serve --host $(HOST) --port $(PORT)
 
 .PHONY: hub
@@ -212,8 +216,10 @@ tui: ## Terminal window onto a relayed session (pure /ws client)
 	bun run $(BIN) tui --server ws://$(HOST):$(PORT)/ws
 
 .PHONY: dev
-dev: logo relay-diagram serve-hints ## Start the server in --watch mode (auto-restart on file change)
-	@printf '%s\n' ' $(AMBER)⟳$(OFF) $(DIM)watch mode — the relay restarts on every file change$(OFF)' ''
+dev: logo relay-diagram serve-hints ui-build ## Relay in --watch mode serving a built SPA (for UI HMR run `bun run dev` + `bun run dev:relay`)
+	@printf '%s\n' \
+	  ' $(AMBER)⟳$(OFF) $(DIM)watch mode — the relay restarts on every source change$(OFF)' \
+	  ' $(DIM)for live SPA HMR: run $(CYAN)bun run dev$(OFF)$(DIM) (Vite :5173, proxies /ws) alongside $(CYAN)bun run dev:relay$(OFF)' ''
 	@bun run --watch $(BIN) serve --host $(HOST) --port $(PORT)
 
 # ---------------------------------------------------------------------------

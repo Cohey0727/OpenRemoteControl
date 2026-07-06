@@ -66,6 +66,14 @@ function pickTargets(): Target[] {
 
 async function main(): Promise<void> {
   const targets = pickTargets();
+
+  // The SPA is a Vite build; the binary serves ui/dist at runtime, so it
+  // must exist before we compile. (The binary bundles the server JS but
+  // reads the UI from disk next to it — ship ui/dist alongside.)
+  console.log('→ building the SPA (vite)');
+  const ui = await Bun.$`bun run build:ui`.nothrow();
+  if (ui.exitCode !== 0) throw new Error('vite build failed');
+
   rmSync(distDir, { recursive: true, force: true });
   mkdirSync(distDir, { recursive: true });
 

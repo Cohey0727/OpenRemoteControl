@@ -14,26 +14,27 @@
  *   6. Browser sends `permission_response` → bridge receives a
  *      `permission_response` frame.
  *   7. Bridge closes → browser receives `client_removed`.
- *   8. Static asset routes (`/`, `/app.ts`, `/sw.js`, `/health`) work.
+ *   8. Static asset routes (`/`, `/assets/*`, `/sw.js`, `/health`) work.
  *   9. No `/internal/hook`, no `/api/sessions` — 404s as expected.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { serve } from '../src/serve.ts';
+import { ensureUiDist } from './helpers/build-ui.ts';
 
 const PORT = 7401;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
 const AGENT_URL = `ws://127.0.0.1:${PORT}/agent`;
 const HTTP_URL = `http://127.0.0.1:${PORT}`;
-const UI_DIR = `${import.meta.dir}/../ui`;
 
 let handle: { stop: () => Promise<void> } | undefined;
 
 beforeAll(async () => {
+  const uiDir = await ensureUiDist();
   handle = await serve({
     host: '127.0.0.1',
     port: PORT,
-    uiDir: UI_DIR,
+    uiDir,
     pushDisabled: true,
   });
   // Brief pause so the listener is fully armed before any test WS connects.
@@ -423,15 +424,19 @@ describe('relay: HTTP routes', () => {
     expect(ct).toContain('text/html');
   });
 
-  test('GET /app.ts serves the SPA entrypoint (transpiled to JS)', async () => {
-    const res = await fetch(`${HTTP_URL}/app.ts`);
+  test('GET / references a hashed Vite bundle that serves as JavaScript', async () => {
+    // The SPA is a Vite build (React + wouter): index.html references a
+    // content-hashed module under /assets/, which the server streams as JS
+    // with an immutable cache. (There is no more on-the-fly /app.ts.)
+    const html = await (await fetch(`${HTTP_URL}/`)).text();
+    const m = html.match(/src="(\/assets\/[^"]+\.js)"/);
+    expect(m).not.toBeNull();
+    const assetPath = m?.[1] ?? '';
+    const res = await fetch(`${HTTP_URL}${assetPath}`);
     expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body.length).toBeGreaterThan(0);
-    // The SPA is vanilla TS now: it must import `marked` from the
-    // importmap and contain the home-grown signal implementation.
-    expect(body).toContain('marked');
-    expect(body).toContain('function signal(');
+    expect(res.headers.get('content-type') ?? '').toContain('javascript');
+    expect(res.headers.get('cache-control') ?? '').toContain('immutable');
+    expect((await res.text()).length).toBeGreaterThan(0);
   });
 
   test('GET /sw.js serves the service worker', async () => {

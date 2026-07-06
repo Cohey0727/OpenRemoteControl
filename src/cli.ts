@@ -49,7 +49,9 @@ function parseArgs(argv: string[]): {
   return { command, flags: parseFlags(rest) };
 }
 
-const uiDir = new URL('../ui/', import.meta.url).pathname;
+// The SPA is a Vite build; `orc serve` hosts its output. Run `bun run
+// build:ui` (or `make serve`, which does it for you) to produce ui/dist.
+const uiDir = new URL('../ui/dist/', import.meta.url).pathname;
 
 const { command, flags } = parseArgs(process.argv.slice(2));
 

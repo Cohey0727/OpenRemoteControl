@@ -15,21 +15,23 @@
   "bin": {
     "orc": "./src/cli.ts"
   },
-  "files": ["src", "ui", "README.md", "SECURITY.md", "LICENSE"],
+  "files": ["src", "ui/dist", "README.md", "SECURITY.md", "LICENSE"],
   "keywords": ["claude", "claude-code", "remote", "control-plane", "agent", "relay"],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "dev": "bun run --watch src/cli.ts serve --port 7322",
-    "start": "bun run src/cli.ts serve --port 7322",
-    "serve": "bun run src/cli.ts serve",
+    "dev": "vite",
+    "dev:relay": "bun run --watch src/cli.ts serve --port 7322",
+    "build:ui": "vite build",
+    "start": "bun run build:ui && bun run src/cli.ts serve --port 7322",
+    "serve": "bun run build:ui && bun run src/cli.ts serve",
     "hub": "bun run src/cli.ts hub",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "lint": "biome check .",
     "fmt": "biome format --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p ui/tsconfig.json",
     "build": "bun run scripts/build.ts",
     "build-icons": "bun run scripts/build-icons.ts"
   },
@@ -37,15 +39,23 @@
     "@biomejs/biome": "^1.9.0",
     "@resvg/resvg-js": "^2.6.0",
     "@types/bun": "^1.1.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
     "playwright": "^1.61.1",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vite": "^6.0.0"
   },
   "engines": {
     "bun": ">=1.1.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "marked": "^15.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "web-push": "^3.6.7",
+    "wouter": "^3.3.0",
     "zod": "^4.4.3"
   }
 }

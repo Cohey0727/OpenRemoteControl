@@ -22,12 +22,14 @@
  * server appends a `shell-rev` fingerprint of the ui/ directory to
  * this file, so any shell change already makes the served bytes
  * differ and triggers the SW update flow. */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const APP_SHELL = `${CACHE_VERSION}-app-shell`;
+// Vite content-hashes the JS/CSS bundles, so their URLs can't be listed
+// here. We precache only the stable, unhashed shell entry points; the
+// hashed assets are cached opportunistically by the fetch handler on the
+// first online load (see below), so subsequent offline loads still boot.
 const APP_SHELL_URLS = [
   '/',
-  '/app.ts',
-  '/vendor/marked.js',
   '/icon.svg',
   '/icon-192.png',
   '/icon-512.png',
@@ -60,11 +62,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(
-        keys
-          .filter((k) => k !== APP_SHELL && k.startsWith(`${CACHE_VERSION}-`))
-          .map((k) => caches.delete(k)),
-      );
+      // We keep exactly one cache; drop every other (including caches from
+      // older CACHE_VERSIONs — the app.ts/vendor era).
+      await Promise.all(keys.filter((k) => k !== APP_SHELL).map((k) => caches.delete(k)));
       await self.clients.claim();
     })(),
   );

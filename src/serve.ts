@@ -6,12 +6,14 @@
  * currently-connected bridges. Restart the server, lose the map, bridges
  * reconnect on a short backoff.
  *
- * Routes:
- *   GET  /                       → SPA (index.html)
- *   GET  /sw.js                  → service worker
+ * The SPA is a Vite build (React + TypeScript + wouter); this hosts its
+ * `ui/dist/` output. Routes:
+ *   GET  /                       → SPA (dist/index.html)
+ *   GET  /sessions/<id>          → SPA (deep-link fallback)
+ *   GET  /sw.js                  → service worker (+ shell-rev stamp)
  *   GET  /manifest.webmanifest   → PWA manifest
  *   GET  /icon.svg, /icon-*.png, /apple-touch-icon.png
- *   GET  /app.ts, /styles.css    → SPA assets (whitelisted)
+ *   GET  /assets/*.{js,css}      → hashed Vite bundles (immutable cache)
  *   GET  /health                 → JSON health check
  *   GET  /api/push/vapid-public-key
  *   POST /api/push/subscribe
@@ -538,7 +540,9 @@ export async function serve(opts: ServeOptions): Promise<{
       ) {
         const file = Bun.file(indexPath);
         if (!(await file.exists())) {
-          return new Response('UI not built; see ui/index.html', { status: 500 });
+          return new Response('UI not built — run `bun run build:ui` (or `make serve`)', {
+            status: 500,
+          });
         }
         return new Response(file, {
           headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -572,15 +576,20 @@ export async function serve(opts: ServeOptions): Promise<{
         });
       }
 
-      // SPA assets.
+      // Static assets from the Vite build (dist/): hashed JS/CSS under
+      // /assets/, plus the verbatim public/ files (icons, manifest) at the
+      // root. Vite already transpiled/bundled everything — the server just
+      // streams bytes with a path-traversal guard.
       if (
-        url.pathname.endsWith('.ts') ||
         url.pathname.endsWith('.js') ||
         url.pathname.endsWith('.css') ||
         url.pathname.endsWith('.json') ||
         url.pathname.endsWith('.webmanifest') ||
         url.pathname.endsWith('.svg') ||
-        url.pathname.endsWith('.png')
+        url.pathname.endsWith('.png') ||
+        url.pathname.endsWith('.ico') ||
+        url.pathname.endsWith('.woff2') ||
+        url.pathname.endsWith('.map')
       ) {
         const safe = url.pathname.replace(/^\/+/, '');
         const assetPath = resolve(join(opts.uiDir, safe));
@@ -593,29 +602,23 @@ export async function serve(opts: ServeOptions): Promise<{
         if (!(await file.exists())) {
           return new Response('not found', { status: 404 });
         }
-        if (url.pathname.endsWith('.ts')) {
-          const transpiler = new Bun.Transpiler({
-            loader: 'ts',
-            target: 'browser',
-            tsconfig: { compilerOptions: { jsx: 'preserve' } },
-          });
-          const src = await file.text();
-          const out = transpiler.transformSync(src, 'ts');
-          return new Response(out, {
-            headers: { 'content-type': 'application/javascript; charset=utf-8' },
-          });
-        }
         // PWA manifest needs the spec'd content type and must not be
-        // cached, otherwise the browser pins a stale install metadata
-        // snapshot and a manifest edit ships only after the user
-        // clears storage. The default Bun inference (text/plain) is
-        // wrong, so we set it explicitly.
+        // cached, otherwise the browser pins a stale install-metadata
+        // snapshot. The default Bun inference (text/plain) is wrong.
         if (url.pathname.endsWith('.webmanifest')) {
           return new Response(file, {
             headers: {
               'content-type': 'application/manifest+json',
               'cache-control': 'no-cache',
             },
+          });
+        }
+        // Vite's hashed assets are content-addressed — safe to cache
+        // forever. A shell change ships a new filename, not a new body at
+        // the same URL.
+        if (url.pathname.startsWith('/assets/')) {
+          return new Response(file, {
+            headers: { 'cache-control': 'public, max-age=31536000, immutable' },
           });
         }
         return new Response(file);

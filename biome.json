@@ -8,10 +8,10 @@
   "files": {
     "ignore": [
       "dist/",
+      "ui/dist/",
       "node_modules/",
       "captures/",
       ".open-rc/",
-      "ui/vendor/",
       "vps/",
       "tests/.tmp-*"
     ]

@@ -15,19 +15,20 @@ import {
   sessionCookie,
 } from '../src/auth/session.ts';
 import { serve } from '../src/serve.ts';
+import { ensureUiDist } from './helpers/build-ui.ts';
 
 const PORT = 7488;
 const BASE = `http://127.0.0.1:${PORT}`;
-const UI_DIR = `${import.meta.dir}/../ui`;
 const AUTH = { user: 'kohei', password: 'correct horse battery staple' };
 
 let handle: { stop: () => Promise<void> } | undefined;
 
 beforeAll(async () => {
+  const uiDir = await ensureUiDist();
   handle = await serve({
     host: '127.0.0.1',
     port: PORT,
-    uiDir: UI_DIR,
+    uiDir,
     pushDisabled: true,
     auth: AUTH,
   });

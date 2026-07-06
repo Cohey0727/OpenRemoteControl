@@ -20,14 +20,16 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { serve } from '../src/serve.ts';
+import { ensureUiDist } from './helpers/build-ui.ts';
 
 const PORT = 7402;
 const HTTP_URL = `http://127.0.0.1:${PORT}`;
-const UI_DIR = `${import.meta.dir}/../ui`;
+let UI_DIR = '';
 
 let handle: { stop: () => Promise<void> } | undefined;
 
 beforeAll(async () => {
+  UI_DIR = await ensureUiDist();
   handle = await serve({
     host: '127.0.0.1',
     port: PORT,
