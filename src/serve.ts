@@ -125,6 +125,18 @@ export async function serve(opts: ServeOptions): Promise<{
   /* ----------------------------- relay state ---------------------------- */
 
   const clients = new Map<string, BridgeConn>();
+  /**
+   * Viewer-chosen display names, keyed by clientId. Overrides the
+   * bridge-provided `label` in every projection a browser sees, and
+   * outlives bridge reconnects (an `orc attach` clientId is the stable
+   * session id, so a blip must not drop the alias). In-memory only —
+   * dropped on restart, like `clients` and the history buffers. Bounded
+   * by pruning aliases for clients that are gone once it grows large.
+   */
+  const renames = new Map<string, string>();
+  const MAX_RENAMES = 512;
+  const displayLabel = (clientId: string, rawLabel: string): string =>
+    renames.get(clientId) ?? rawLabel;
   /** Browsers subscribed to a given clientId. */
   const attachedBrowsers = new Map<string, Set<ServerWebSocket<WsData>>>();
   /** All browsers currently connected on `/ws`. Used to fan out
@@ -136,7 +148,7 @@ export async function serve(opts: ServeOptions): Promise<{
   function infoOf(conn: BridgeConn): ClientInfo {
     return {
       clientId: conn.clientId,
-      label: conn.label,
+      label: displayLabel(conn.clientId, conn.label),
       cwd: conn.cwd,
       status: conn.status,
       lastActivity: conn.lastActivity,
@@ -193,7 +205,7 @@ export async function serve(opts: ServeOptions): Promise<{
         info() {
           return {
             clientId: this.clientId,
-            label: this.label,
+            label: displayLabel(this.clientId, this.label),
             cwd: this.cwd,
             status: this.status,
             lastActivity: this.lastActivity,
@@ -204,6 +216,31 @@ export async function serve(opts: ServeOptions): Promise<{
       clients.set(clientId, conn);
       attachedBrowsers.set(clientId, new Set());
       return conn;
+    },
+    renameClient(clientId, label) {
+      // No conn = nothing to rename; ignore (browser will refresh its
+      // list and drop the stale row).
+      if (!clients.has(clientId)) return;
+      const trimmed = label.trim();
+      if (trimmed === '') renames.delete(clientId);
+      else renames.set(clientId, trimmed);
+      // Keep the alias map from growing unbounded across many sessions:
+      // once large, drop aliases whose client is no longer connected.
+      if (renames.size > MAX_RENAMES) {
+        for (const id of renames.keys()) {
+          if (!clients.has(id)) renames.delete(id);
+        }
+      }
+      // Push the refreshed list to every connected browser so all
+      // viewers see the new name at once.
+      const json = JSON.stringify({ type: 'clients_changed', clients: listClients() });
+      for (const ws of connectedBrowsers) {
+        try {
+          ws.send(json);
+        } catch {
+          // socket closed; the close handler cleans up
+        }
+      }
     },
     removeBridge(clientId) {
       const conn = clients.get(clientId);

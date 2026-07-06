@@ -76,6 +76,9 @@ export interface WsHandlerDeps {
   }) => BridgeConn;
   /** Remove a bridge by clientId. Idempotent. */
   readonly removeBridge: (clientId: string) => void;
+  /** Set/clear a viewer-chosen display name for a client and broadcast
+   *  the updated list. Empty label clears the alias. */
+  readonly renameClient: (clientId: string, label: string) => void;
   /** Update a bridge's status. */
   readonly setBridgeStatus: (clientId: string, status: BridgeConn['status']) => void;
   /** Touch lastActivity; returns true if the status transitioned to busy. */
@@ -125,6 +128,7 @@ function makeBrowserHandlers(deps: WsHandlerDeps) {
     replayHistory,
     registerBrowser,
     unregisterBrowser,
+    renameClient,
   } = deps;
 
   function sendToBrowser(ws: ServerWebSocket<WsData>, frame: ServerBrowserMessage): void {
@@ -290,6 +294,9 @@ function makeBrowserHandlers(deps: WsHandlerDeps) {
           }
           break;
         }
+        case 'rename':
+          renameClient(msg.clientId, msg.label);
+          break;
         case 'list_clients':
           handleListClients(ws);
           break;
@@ -437,7 +444,12 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         //  - permission_request (a stale replayed prompt would pop a
         //    modal for an already-answered request),
         //  - text_delta (the final `text` frame carries the same
-        //    content; replaying both would render the reply twice).
+        //    content; replaying both would render the reply twice),
+        //  - error (point-in-time notices — e.g. "message queued, the
+        //    session is idle" or the hooks-not-installed warning. They
+        //    are meaningless once the moment passes, and recording them
+        //    made a single notice re-appear on every reattach/reload,
+        //    which read as the same error "spamming" the transcript).
         // Bridge-observed `user` prompts (e.g. typed into the shared
         // terminal) ARE recorded, like the server's own send echoes.
         // `question` is transient like `permission_request`: a replayed
@@ -445,7 +457,8 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
         if (
           msg.type !== 'permission_request' &&
           msg.type !== 'text_delta' &&
-          msg.type !== 'question'
+          msg.type !== 'question' &&
+          msg.type !== 'error'
         ) {
           recordHistory(clientId, tagged);
         }

@@ -276,6 +276,98 @@ describe('relay: bridge ↔ browser', () => {
     bridge.close();
   });
 
+  test('browser rename sets a shared alias and survives bridge reconnect', async () => {
+    const browser = await openFramed(WS_URL);
+    let bridge = await openFramed(AGENT_URL);
+
+    bridge.ws.send(
+      JSON.stringify({ type: 'register', clientId: 'ren-1', label: 'mbp@host', cwd: '/w' }),
+    );
+    const reg = await browser.waitFor((m) => m.type === 'client_registered');
+    expect((reg.client as { label: string }).label).toBe('mbp@host');
+
+    // Rename → clients_changed carries the new label for every viewer.
+    browser.ws.send(JSON.stringify({ type: 'rename', clientId: 'ren-1', label: 'My laptop' }));
+    const changed = await browser.waitFor(
+      (m) =>
+        m.type === 'clients_changed' &&
+        (m as unknown as { clients: { clientId: string; label: string }[] }).clients.some(
+          (c) => c.clientId === 'ren-1' && c.label === 'My laptop',
+        ),
+    );
+    expect(changed).toBeTruthy();
+
+    // Bridge reconnects with its OWN label; the alias must stick. Verify
+    // via a fresh list_clients (waitFor scans the whole inbox and would
+    // otherwise match the ORIGINAL client_registered for the same id).
+    bridge.close();
+    await browser.waitFor((m) => m.type === 'client_removed');
+    bridge = await openFramed(AGENT_URL);
+    bridge.ws.send(
+      JSON.stringify({ type: 'register', clientId: 'ren-1', label: 'mbp@host', cwd: '/w' }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    browser.ws.send(JSON.stringify({ type: 'list_clients' }));
+    const afterReconnect = await browser.waitFor(
+      (m) =>
+        m.type === 'client_list' &&
+        (m as unknown as { clients: { clientId: string }[] }).clients.some(
+          (c) => c.clientId === 'ren-1',
+        ),
+    );
+    expect(
+      (afterReconnect.clients as { clientId: string; label: string }[]).find(
+        (c) => c.clientId === 'ren-1',
+      )?.label,
+    ).toBe('My laptop');
+
+    // Empty label clears the alias back to the bridge's own name.
+    browser.ws.send(JSON.stringify({ type: 'rename', clientId: 'ren-1', label: '  ' }));
+    await browser.waitFor(
+      (m) =>
+        m.type === 'clients_changed' &&
+        (m as unknown as { clients: { clientId: string; label: string }[] }).clients.some(
+          (c) => c.clientId === 'ren-1' && c.label === 'mbp@host',
+        ),
+    );
+
+    browser.close();
+    bridge.close();
+    // Let the server process the close before count-sensitive tests run.
+    await new Promise((r) => setTimeout(r, 80));
+  });
+
+  test('error frames are NOT replayed on reattach (point-in-time notices)', async () => {
+    const browser = await openFramed(WS_URL);
+    const bridge = await openFramed(AGENT_URL);
+
+    bridge.ws.send(JSON.stringify({ type: 'register', clientId: 'err-1', label: 'e', cwd: '/e' }));
+    await browser.waitFor((m) => m.type === 'client_registered');
+    browser.ws.send(JSON.stringify({ type: 'attach', clientId: 'err-1' }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Bridge emits a text frame (recorded) and an error notice (transient).
+    bridge.ws.send(JSON.stringify({ type: 'text', text: 'hello' }));
+    bridge.ws.send(JSON.stringify({ type: 'error', message: 'message queued — idle' }));
+    await browser.waitFor((m) => m.type === 'error');
+
+    // Re-attach: the server replays history. The text must come back;
+    // the error notice must NOT (else it multiplies on every reattach).
+    browser.ws.send(JSON.stringify({ type: 'detach', clientId: 'err-1' }));
+    await new Promise((r) => setTimeout(r, 30));
+    const replay = await openFramed(WS_URL);
+    replay.ws.send(JSON.stringify({ type: 'attach', clientId: 'err-1' }));
+    const frames = await replay.collectUntil((m) => m.type === 'text');
+    expect(frames.some((f) => f.type === 'text' && f.text === 'hello')).toBe(true);
+    expect(frames.some((f) => f.type === 'error')).toBe(false);
+
+    browser.close();
+    replay.close();
+    bridge.close();
+    // Let the server process the close before count-sensitive tests run.
+    await new Promise((r) => setTimeout(r, 80));
+  });
+
   test('bridge close broadcasts client_removed', async () => {
     const browser = await openFramed(WS_URL);
     const bridge = await openFramed(AGENT_URL);

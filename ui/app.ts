@@ -314,7 +314,8 @@ type BrowserClientMessage =
       clientId: string;
       requestId: string;
       approved: boolean;
-    };
+    }
+  | { type: 'rename'; clientId: string; label: string };
 
 type ServerBrowserMessage =
   | { type: 'client_list'; clients: ClientInfo[] }
@@ -613,12 +614,13 @@ function handleServer(msg: ServerBrowserMessage): void {
       const has = (id: string): boolean => msg.clients.some((c) => c.clientId === id);
       if (pendingSession && has(pendingSession)) {
         // The session named in the URL just appeared — attach to it.
+        // This is the ONLY automatic attach: a deep link (/sessions/:id)
+        // or a reload of one. Landing on `/` deliberately does NOT
+        // auto-pick a session — the sidebar stays the home view until
+        // the user picks a row. (Auto-picking the first client yanked
+        // people into a session they didn't choose, and each such
+        // attach replayed that session's notices — reported 2026-07-06.)
         selectClient(pendingSession, { replace: true });
-        pendingSession = null;
-      } else if (!activeId() && msg.clients.length > 0) {
-        // No URL session (or it's absent from a non-empty list): auto-pick.
-        const first = msg.clients.find((c) => c.status !== 'exited') ?? msg.clients[0];
-        if (first) selectClient(first.clientId, { replace: true });
         pendingSession = null;
       }
       if (activeId() && !has(activeId() as string)) {
@@ -638,10 +640,10 @@ function handleServer(msg: ServerBrowserMessage): void {
         return [...prev, msg.client];
       });
       if (pendingSession === msg.client.clientId) {
+        // Only the URL-named session auto-attaches; a freshly
+        // registered client no longer steals focus (see clients_changed).
         selectClient(msg.client.clientId, { replace: true });
         pendingSession = null;
-      } else if (!activeId() && !pendingSession) {
-        selectClient(msg.client.clientId, { replace: true });
       }
       break;
     case 'client_removed':
@@ -1226,6 +1228,22 @@ function buildApp(): HTMLElement {
       'div',
       { class: 'chat-cwd' },
       h('span', { class: 'label' }),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn-rename',
+          title: 'Rename this session',
+          'aria-label': 'Rename this session',
+        },
+        '✎',
+      ),
+      h('input', {
+        class: 'rename-input',
+        type: 'text',
+        maxlength: '80',
+        'aria-label': 'Session name',
+      }),
       h('span', { class: 'sep' }, '·'),
       h('span', { class: 'cwd-text' }),
     ),
@@ -1235,10 +1253,54 @@ function buildApp(): HTMLElement {
   effect(() => {
     backBtn.style.display = mobile() ? '' : 'none';
   });
+
+  // Inline session rename. The pencil swaps the label for a text input;
+  // Enter or blur commits, Esc cancels. An empty value clears the alias
+  // back to the bridge-provided name. The new name is sent to the server
+  // (`rename` frame) and broadcast to every viewer, so all shared views
+  // — browser and tui — show it, and it survives bridge reconnects.
+  const labelEl = mustQuery(topbar, '.label') as HTMLElement;
+  const renameBtn = mustQuery(topbar, '.btn-rename') as HTMLElement;
+  const renameInput = mustQuery(topbar, '.rename-input') as HTMLInputElement;
+  const [renaming, setRenaming] = signal(false);
+
+  const commitRename = (): void => {
+    const cid = activeId();
+    if (cid) send({ type: 'rename', clientId: cid, label: renameInput.value.trim() });
+    setRenaming(false);
+  };
+  const startRename = (): void => {
+    renameInput.value = activeClient()?.label ?? '';
+    setRenaming(true);
+    // Focus after the effect reveals the input.
+    queueMicrotask(() => {
+      renameInput.focus();
+      renameInput.select();
+    });
+  };
+  renameBtn.addEventListener('click', startRename);
+  renameInput.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setRenaming(false);
+    }
+  });
+  renameInput.addEventListener('blur', () => {
+    if (renaming()) commitRename();
+  });
+  effect(() => {
+    const editing = renaming();
+    labelEl.style.display = editing ? 'none' : '';
+    renameBtn.style.display = editing ? 'none' : '';
+    renameInput.style.display = editing ? '' : 'none';
+  });
+
   effect(() => {
     const c = activeClient();
     if (!c) return;
-    const labelEl = mustQuery(topbar, '.label');
     const cwdEl = mustQuery(topbar, '.cwd-text');
     const statusEl = mustQuery(topbar, '.chat-status');
     mustQuery(topbar, '.chat-cwd').setAttribute('title', c.cwd);

@@ -117,6 +117,19 @@ export const PermissionResponse = z.object({
 });
 export type PermissionResponse = z.infer<typeof PermissionResponse>;
 
+/** Set (or clear) a viewer-chosen display name for a client. The
+ *  server keeps the alias in memory keyed by clientId, applies it to
+ *  the `label` every viewer sees, and preserves it across bridge
+ *  reconnects — an empty `label` clears the alias back to the
+ *  bridge-provided one. In-memory only, like the rest of serve's
+ *  state (lost on restart). */
+export const RenameClient = z.object({
+  type: z.literal('rename'),
+  clientId: z.string().min(1),
+  label: z.string().max(80),
+});
+export type RenameClient = z.infer<typeof RenameClient>;
+
 export const BrowserClientMessage = z.discriminatedUnion('type', [
   ListClients,
   Attach,
@@ -124,6 +137,7 @@ export const BrowserClientMessage = z.discriminatedUnion('type', [
   SendPrompt,
   PermissionResponse,
   QuestionResponse,
+  RenameClient,
 ]);
 export type BrowserClientMessage = z.infer<typeof BrowserClientMessage>;
 
