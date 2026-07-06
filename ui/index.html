@@ -121,10 +121,20 @@
            behind the browser's URL/tool bars, so a bottom-pinned
            composer sits below the visible area and looks missing.
            100dvh tracks the *visible* viewport (shrinks with the URL
-           bar), keeping the composer on-screen. 100vh stays as the
-           fallback for browsers without dvh. (reported 2026-07-06) */
+           bar). But on iOS Safari dvh still fails in two cases the
+           /sessions/:id screen hits: (1) a direct load / reload renders
+           with the toolbars in their EXPANDED state and dvh resolves to
+           a height that leaves the composer behind the bottom bar until
+           you scroll; (2) the software keyboard is an overlay that does
+           NOT shrink dvh, so a focused composer ends up behind the
+           keyboard. --app-vh is set from the VisualViewport API (app.ts)
+           to the exact visible height in every state, so the composer is
+           always on-screen. Fallback chain for no-JS / no-dvh browsers.
+           (reported 2026-07-06; the home/sidebar screen never showed the
+           bug because it has no composer at the bottom.) */
         height: 100vh;
         height: 100dvh;
+        height: var(--app-vh, 100dvh);
         width: 100vw;
         position: relative;
         overflow: hidden;

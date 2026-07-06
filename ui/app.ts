@@ -789,6 +789,29 @@ if (typeof window !== 'undefined') {
   });
 }
 
+/* ------------------------------------------------------------
+ * Visible-viewport height (--app-vh)
+ *
+ * The bottom-pinned composer must stay on-screen on mobile in
+ * every toolbar/keyboard state. CSS dvh alone can't: iOS Safari
+ * lays a *direct* /sessions/:id load out with expanded toolbars
+ * (composer behind the bottom bar), and the software keyboard is
+ * an overlay that doesn't shrink dvh (composer behind the
+ * keyboard). VisualViewport reports the true visible height in
+ * all of those states, so we mirror it into --app-vh. Falls back
+ * to the CSS dvh chain where VisualViewport is unavailable.
+ * ------------------------------------------------------------ */
+if (typeof window !== 'undefined' && window.visualViewport) {
+  const vv = window.visualViewport;
+  const syncAppHeight = (): void => {
+    document.documentElement.style.setProperty('--app-vh', `${vv.height}px`);
+  };
+  vv.addEventListener('resize', syncAppHeight);
+  vv.addEventListener('scroll', syncAppHeight);
+  window.addEventListener('orientationchange', syncAppHeight);
+  syncAppHeight();
+}
+
 /* ============================================================
  * View helpers
  * ============================================================ */
