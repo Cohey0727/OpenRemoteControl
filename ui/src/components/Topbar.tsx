@@ -50,6 +50,11 @@ export function Topbar({ client, onBack }: Props) {
             onChange={(e) => setValue(e.currentTarget.value)}
             onBlur={commit}
             onKeyDown={(e) => {
+              // The Enter/Escape that confirms or cancels an IME
+              // composition (kanji conversion etc.) belongs to the IME,
+              // not to us — same guard as the composer. keyCode 229 is
+              // the legacy signal some browsers (notably Safari) report.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === 'Enter') {
                 e.preventDefault();
                 commit();

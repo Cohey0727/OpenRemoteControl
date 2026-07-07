@@ -321,6 +321,9 @@ button {
   min-width: 0;
 }
 .client-label {
+  /* Inline spans ignore overflow — block is what makes the ellipsis
+     below actually bite on a long session name. */
+  display: block;
   font-size: 0.85rem;
   font-weight: 500;
   white-space: nowrap;
