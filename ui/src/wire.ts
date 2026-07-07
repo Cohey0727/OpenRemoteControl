@@ -13,6 +13,8 @@ export interface ClientInfo {
   status: ClientStatus;
   lastActivity: number;
   connectedAt: number;
+  /** Model the session runs on, once its transcript reveals it. */
+  model?: string;
 }
 
 export interface QuestionOption {

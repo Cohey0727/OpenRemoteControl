@@ -248,6 +248,10 @@ button {
 .client-list {
   flex: 1;
   overflow-y: auto;
+  /* Never scroll sideways: overflow-y alone computes overflow-x to
+     auto, so any over-wide child (e.g. a long un-truncated name)
+     turns into a horizontal scrollbar instead of being clipped. */
+  overflow-x: hidden;
   padding: 0.4rem 0.5rem 0.85rem;
   min-height: 0;
 }
@@ -350,9 +354,16 @@ button {
 .client-sub .sep {
   opacity: 0.5;
 }
+.client-sub .client-model {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
 .client-sub .client-cwd {
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Flex items refuse to shrink below content by default; without
+     this the sub line pushes wider than the row on long paths. */
+  min-width: 0;
 }
 .client-row.active .client-label {
   color: var(--accent);

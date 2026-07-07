@@ -54,6 +54,7 @@ const TranscriptEntry = z.looseObject({
   message: z
     .looseObject({
       role: z.string().optional(),
+      model: z.string().optional(),
       content: z.union([z.string(), z.array(ContentBlock)]).optional(),
     })
     .nullish(),
@@ -152,6 +153,18 @@ export function entryTimestamp(raw: unknown): number | null {
   if (!parsed.success || !parsed.data.timestamp) return null;
   const ms = Date.parse(parsed.data.timestamp);
   return Number.isNaN(ms) ? null : ms;
+}
+
+/** The model that produced an assistant entry (`message.model`), or
+ *  null for anything else. The bridge relays it so the sidebar can
+ *  show which model a session runs on. */
+export function entryModel(raw: unknown): string | null {
+  const parsed = TranscriptEntry.safeParse(raw);
+  if (!parsed.success) return null;
+  const entry = parsed.data;
+  if (entry.type !== 'assistant' || entry.isSidechain === true) return null;
+  const model = entry.message?.model;
+  return typeof model === 'string' && model !== '' ? model : null;
 }
 
 /**

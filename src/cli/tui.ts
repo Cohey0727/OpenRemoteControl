@@ -70,6 +70,7 @@ interface ClientInfo {
   cwd: string;
   status: string;
   lastActivity: number;
+  model?: string;
 }
 
 function truncate(s: string, n: number): string {
@@ -351,8 +352,9 @@ export async function runTui(flags: TuiFlags): Promise<void> {
           if (clients.length === 0) render(`${C.dim}no sessions${C.off}`);
           for (const c of clients) {
             const mark = c.clientId === attached ? `${C.amber}●${C.off}` : ' ';
+            const model = c.model ? ` · ${c.model}` : '';
             render(
-              `${mark} ${C.cyan}${c.clientId}${C.off}  ${c.label} ${C.dim}${c.status} · ${c.cwd}${C.off}`,
+              `${mark} ${C.cyan}${c.clientId}${C.off}  ${c.label} ${C.dim}${c.status}${model} · ${c.cwd}${C.off}`,
             );
           }
           break;

@@ -184,8 +184,11 @@ rebuilds the same UX against any provider by relaying the public
 - **Sidebar of currently-connected clients.** 300 px sidebar on the
   left, always visible on desktop, slides in/out on mobile. Each row
   = one currently-open WebSocket to `orc serve` from a user's
-  bridge. Columns: status dot, client label, abbreviated cwd,
-  last-activity timestamp.
+  bridge. Columns: status dot, client label, model (once the
+  transcript reveals it — `ClientInfo.model`, compacted for display:
+  `claude-fable-5` → `fable-5`), abbreviated cwd, last-activity
+  timestamp. Long values truncate with ellipsis; the list never
+  scrolls horizontally.
 - **Multiple concurrent clients.** The server holds N clients at once.
   Each client has its own clientId, label, cwd, status, and
   lastActivity. Clicking a row attaches the UI to that client's
@@ -367,7 +370,10 @@ Two boundaries: browser ↔ `orc serve` on `/ws`, and bridge ↔
   e.g. typed into the shared terminal and replayed from the
   transcript; prompts sent through the server are echoed by the server
   itself and must NOT be re-sent by the bridge — the attach bridge filters
-  them by the `[open-rc]` marker), `status`, `unregister`, and
+  them by the `[open-rc]` marker), `status`, `model { model }` (the
+  session's model, read from transcript assistant entries — folded
+  into `ClientInfo.model` for the sidebar; re-sent after reconnects),
+  `unregister`, and
   `rekey { clientId }` — move this client to a new id in place
   (attached viewers, history buffer, and viewer alias migrate;
   answered with a `rekeyed` ack, or an `error` frame if the id is

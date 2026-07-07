@@ -21,6 +21,13 @@ export function basename(p: string): string {
   return m[m.length - 1] ?? p;
 }
 
+/** Compact model name for the sidebar: strip the `claude-` prefix and
+ *  a trailing release date (`claude-haiku-4-5-20251001` → `haiku-4-5`).
+ *  Unknown shapes pass through untouched. */
+export function formatModel(model: string): string {
+  return model.replace(/^claude-/, '').replace(/-\d{8}$/, '');
+}
+
 export function isMobile(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches;
 }

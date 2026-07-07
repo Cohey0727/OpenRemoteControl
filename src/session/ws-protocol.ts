@@ -35,6 +35,10 @@ export const ClientInfo = z.object({
   status: ClientStatus,
   lastActivity: z.number(),
   connectedAt: z.number(),
+  /** Model the session runs on (e.g. "claude-fable-5"), as observed
+   *  by the bridge in the transcript. Absent until the first
+   *  assistant turn reveals it. */
+  model: z.string().optional(),
 });
 export type ClientInfo = z.infer<typeof ClientInfo>;
 
@@ -52,6 +56,8 @@ export interface BridgeConn {
   status: ClientStatus;
   lastActivity: number;
   readonly connectedAt: number;
+  /** Set when the bridge reports the session's model (`model` frame). */
+  model?: string;
   readonly ws: unknown;
   /**
    * Bounded in-memory replay buffer of the conversation frames this
@@ -376,6 +382,15 @@ export const StatusUpdate = z.object({
 });
 export type StatusUpdate = z.infer<typeof StatusUpdate>;
 
+/** Report the model the session runs on, read from its transcript
+ *  (assistant entries carry `message.model`). Sent once known and on
+ *  change; the server folds it into `ClientInfo.model`. */
+export const ModelUpdate = z.object({
+  type: z.literal('model'),
+  model: z.string().min(1),
+});
+export type ModelUpdate = z.infer<typeof ModelUpdate>;
+
 /** Frames forwarded to attached browsers. The server adds `clientId`.
  *
  * `user` is a prompt the bridge observed on ITS side of the session —
@@ -421,6 +436,7 @@ export const BridgeToServer = z.discriminatedUnion('type', [
   Unregister,
   Rekey,
   StatusUpdate,
+  ModelUpdate,
   BridgeFrame,
 ]);
 export type BridgeToServer = z.infer<typeof BridgeToServer>;

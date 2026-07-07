@@ -770,8 +770,9 @@ and spawns nothing.)
 ### UI at a glance
 
 A 300 px sidebar on the left lists every client currently connected
-to the server. Each row shows a status dot, a client label, an
-abbreviated working directory, and a last-activity timestamp. The
+to the server. Each row shows a status dot, a client label, the model
+the session runs on (once its transcript reveals it), an abbreviated
+working directory, and a last-activity timestamp. The
 right-hand pane shows the active client's transcript (whatever frames
 the user's bridge sends — typically translated `stream-json` shapes:
 markdown-rendered assistant text, collapsed thinking, tool_use /

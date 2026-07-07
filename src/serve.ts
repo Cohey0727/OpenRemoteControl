@@ -155,6 +155,7 @@ export async function serve(opts: ServeOptions): Promise<{
       status: conn.status,
       lastActivity: conn.lastActivity,
       connectedAt: conn.connectedAt,
+      ...(conn.model !== undefined ? { model: conn.model } : {}),
     };
   }
 
@@ -244,6 +245,7 @@ export async function serve(opts: ServeOptions): Promise<{
             status: this.status,
             lastActivity: this.lastActivity,
             connectedAt: this.connectedAt,
+            ...(this.model !== undefined ? { model: this.model } : {}),
           };
         },
       };
@@ -347,6 +349,12 @@ export async function serve(opts: ServeOptions): Promise<{
       if (!conn) return;
       conn.status = status;
       conn.lastActivity = Date.now();
+    },
+    setBridgeModel(clientId, model) {
+      const conn = clients.get(clientId);
+      if (!conn || conn.model === model) return false;
+      conn.model = model;
+      return true;
     },
     touchBridge(clientId) {
       const conn = clients.get(clientId);

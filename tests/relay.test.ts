@@ -462,6 +462,33 @@ describe('relay: bridge ↔ browser', () => {
     await new Promise((r) => setTimeout(r, 80));
   });
 
+  test('bridge model report lands in ClientInfo and survives a rekey', async () => {
+    const browser = await openFramed(WS_URL);
+    const bridge = await openFramed(AGENT_URL);
+
+    bridge.ws.send(JSON.stringify({ type: 'register', clientId: 'mdl-1', label: 'm', cwd: '/m' }));
+    await browser.waitFor((m) => m.type === 'client_registered');
+
+    bridge.ws.send(JSON.stringify({ type: 'model', model: 'claude-fable-5' }));
+    const changed = await browser.waitFor(
+      (m) =>
+        m.type === 'clients_changed' &&
+        (m as unknown as { clients: { clientId: string; model?: string }[] }).clients.some(
+          (c) => c.clientId === 'mdl-1' && c.model === 'claude-fable-5',
+        ),
+    );
+    expect(changed).toBeTruthy();
+
+    // The model rides along when the client is re-keyed.
+    bridge.ws.send(JSON.stringify({ type: 'rekey', clientId: 'mdl-2' }));
+    const rekeyed = await browser.waitFor((m) => m.type === 'client_rekeyed');
+    expect((rekeyed.client as { model?: string }).model).toBe('claude-fable-5');
+
+    browser.close();
+    bridge.close();
+    await new Promise((r) => setTimeout(r, 80));
+  });
+
   test('rekey to an occupied id is rejected and the old id keeps working', async () => {
     const browser = await openFramed(WS_URL);
     const bridge1 = await openFramed(AGENT_URL);

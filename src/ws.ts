@@ -87,6 +87,8 @@ export interface WsHandlerDeps {
   readonly renameClient: (clientId: string, label: string) => void;
   /** Update a bridge's status. */
   readonly setBridgeStatus: (clientId: string, status: BridgeConn['status']) => void;
+  /** Record the model a bridge reported; returns true if it changed. */
+  readonly setBridgeModel: (clientId: string, model: string) => boolean;
   /** Touch lastActivity; returns true if the status transitioned to busy. */
   readonly touchBridge: (clientId: string) => boolean;
   /** Send a frame to a specific bridge. */
@@ -333,6 +335,7 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
     removeBridge,
     rekeyBridge,
     setBridgeStatus,
+    setBridgeModel,
     touchBridge,
     broadcastToBrowsers,
     broadcastServerMessage,
@@ -463,6 +466,11 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
       case 'status':
         setBridgeStatus(clientId, msg.status);
         broadcastServerMessage({ type: 'clients_changed', clients: deps.listClients() });
+        return;
+      case 'model':
+        if (setBridgeModel(clientId, msg.model)) {
+          broadcastServerMessage({ type: 'clients_changed', clients: deps.listClients() });
+        }
         return;
       case 'user':
       case 'text':

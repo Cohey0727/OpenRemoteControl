@@ -1,4 +1,4 @@
-import { basename, formatRelative } from '../format';
+import { basename, formatModel, formatRelative } from '../format';
 import { useStore } from '../store';
 import type { ClientInfo } from '../wire';
 
@@ -24,6 +24,14 @@ export function ClientRow({ client, active, onSelect }: Props) {
         <span className="client-label">{client.label}</span>
         <span className="client-sub">
           <span className="status-label">{client.status}</span>
+          {client.model ? (
+            <>
+              <span className="sep">·</span>
+              <span className="client-model" title={client.model}>
+                {formatModel(client.model)}
+              </span>
+            </>
+          ) : null}
           <span className="sep">·</span>
           <span className="client-cwd">{basename(client.cwd)}</span>
           <span className="sep">·</span>

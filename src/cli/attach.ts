@@ -65,7 +65,12 @@ import { waitForNewTranscript } from '../channel/discover.ts';
 import { waitForChannelMcpLog } from '../channel/mcp-log.ts';
 import { type LocatedTranscript, resolveTranscript } from '../transcript/locate.ts';
 import { type TailHandle, readAllLines, tailFile } from '../transcript/tail.ts';
-import { type TranscriptFrame, entryTimestamp, translateEntry } from '../transcript/translate.ts';
+import {
+  type TranscriptFrame,
+  entryModel,
+  entryTimestamp,
+  translateEntry,
+} from '../transcript/translate.ts';
 import { lingerMs } from './attach-hooks.ts';
 import { parseFlags } from './flags.ts';
 import { openWebSocket } from './ws-auth.ts';
@@ -406,6 +411,26 @@ export async function runAttachOrc(
   let lastEmitAt = Date.now();
   /** True from the end of a replay until the first live tail line. */
   let justReplayed = false;
+  /** Model last reported to the server (sidebar display). */
+  let lastModel: string | null = null;
+
+  /** Report the session's model when a transcript line reveals it
+   *  (assistant entries carry `message.model`). Cheap substring gate
+   *  before the JSON parse; re-sent after re-registration because a
+   *  reconnect re-creates the server-side client from scratch. */
+  const maybeReportModel = (line: string): void => {
+    if (!line.includes('"model"')) return;
+    let model: string | null;
+    try {
+      model = entryModel(JSON.parse(line));
+    } catch {
+      return;
+    }
+    if (model !== null && model !== lastModel) {
+      lastModel = model;
+      send({ type: 'model', model });
+    }
+  };
 
   const emit = (frames: readonly OutFrame[]): void => {
     for (const frame of frames) send(frame);
@@ -420,6 +445,14 @@ export async function runAttachOrc(
     const { lines, offset } = await readAllLines(loc.path);
     const folded = foldLines(lines);
     turn = folded.state;
+    // The LAST assistant entry names the model the session currently
+    // runs on; scan backwards so one hit suffices.
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (line === undefined || !line.includes('"model"')) continue;
+      maybeReportModel(line);
+      if (lastModel !== null) break;
+    }
     emit(folded.out.slice(-MAX_REPLAY_FRAMES));
     // A replay that ends mid-turn is closed by the stuck-turn guard
     // (markerPoll → closeStuckTurn) after QUIET_TURN_MS of tail
@@ -434,6 +467,7 @@ export async function runAttachOrc(
       fromOffset: offset,
       onLine: (line) => {
         justReplayed = false;
+        maybeReportModel(line);
         if (line.includes('"stop_hook_summary"')) verifyHooksRan();
         // Channel mode: a `<channel>` event landing in the transcript
         // is CONFIRMED delivery of a viewer prompt — the session is
@@ -680,6 +714,9 @@ export async function runAttachOrc(
         resolveFirstRegister?.();
         resolveFirstRegister = null;
         sendRekey(); // reconnect before the ack: ask again
+        // A reconnect re-created the server-side client from scratch —
+        // re-report the model or the sidebar loses it.
+        if (lastModel !== null) send({ type: 'model', model: lastModel });
         maybeStartStreaming();
         return;
       }

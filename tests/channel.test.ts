@@ -426,13 +426,26 @@ describe('runChannel', () => {
         }),
         JSON.stringify({
           type: 'assistant',
-          message: { role: 'assistant', content: [{ type: 'text', text: 'hello from claude' }] },
+          message: {
+            role: 'assistant',
+            model: 'claude-fable-5',
+            content: [{ type: 'text', text: 'hello from claude' }],
+          },
           timestamp: new Date().toISOString(),
         }),
       ];
       await writeFile(transcript, `${entries.join('\n')}\n`);
 
       await browser.waitFor((m) => m.type === 'text' && m.text === 'hello from claude');
+      // The assistant entry names the model; the bridge reports it and
+      // the sidebar list picks it up.
+      await browser.waitFor(
+        (m) =>
+          m.type === 'clients_changed' &&
+          ((m as { clients?: Array<{ clientId: string; model?: string }> }).clients ?? []).some(
+            (c) => c.clientId === 'ch-test-1' && c.model === 'claude-fable-5',
+          ),
+      );
       const dir = attachDirFor('sess-42', attachBase);
       expect(await channelMarkerExists(dir)).toBe(true);
 
