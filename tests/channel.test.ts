@@ -430,6 +430,103 @@ describe('runChannel', () => {
       await handle.stop();
     }
   });
+
+  test('provisional-id collision falls back; each channel re-keys to its session id', async () => {
+    const claudeHome = join(base, 'rekey-home');
+    const attachBase = join(base, 'rekey-attach');
+    const cwdA = join(base, 'rekey-proj-a');
+    const cwdB = join(base, 'rekey-proj-b');
+    await mkdir(cwdA, { recursive: true });
+    await mkdir(cwdB, { recursive: true });
+
+    const entriesFor = (text: string): string =>
+      `${JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'typed in the terminal' },
+        timestamp: new Date().toISOString(),
+      })}\n${JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+        timestamp: new Date().toISOString(),
+      })}\n`;
+
+    // Two sessions whose channels claim the SAME provisional id (the
+    // real-world shape: one cwd, two concurrent `claude` sessions).
+    const mkFlags = (cwd: string): ChannelCliFlags => ({
+      server: AGENT,
+      label: 'rekey-test',
+      cwd,
+      clientId: 'ch-dup',
+      rekeyToSessionId: true,
+    });
+    const mcpA = fakeMcp();
+    const a = await runChannel(mkFlags(cwdA), {
+      log: () => {},
+      mcpFactory: () => mcpA,
+      attachBaseDir: attachBase,
+      claudeHome,
+      discoverPollMs: 50,
+    });
+    const b = await runChannel(mkFlags(cwdB), {
+      log: () => {},
+      mcpFactory: () => fakeMcp(),
+      attachBaseDir: attachBase,
+      claudeHome,
+      discoverPollMs: 50,
+    });
+
+    try {
+      const browser = await open(WS);
+      // Both registered: the first holds `ch-dup`, the second fell back
+      // to a suffixed id instead of dying on the collision.
+      await browser.waitFor((m) => {
+        const clients = (m as { clients?: Array<{ clientId: string }> }).clients;
+        if (!Array.isArray(clients)) return false;
+        return (
+          clients.some((c) => c.clientId === 'ch-dup') &&
+          clients.some((c) => c.clientId.startsWith('ch-dup-'))
+        );
+      });
+
+      // A viewer watches the provisional id before discovery.
+      browser.ws.send(JSON.stringify({ type: 'attach', clientId: 'ch-dup' }));
+
+      // Session A starts writing → its channel re-keys to the session id.
+      const projDirA = join(claudeHome, 'projects', mungeCwd(cwdA));
+      await mkdir(projDirA, { recursive: true });
+      await writeFile(join(projDirA, 'sess-rk-a.jsonl'), entriesFor('hello from a'));
+      const rkA = await browser.waitFor((m) => m.type === 'client_rekeyed' && m.to === 'sess-rk-a');
+      expect(rkA.from).toBe('ch-dup');
+
+      // The attachment moved with the rekey: prompts route to session A
+      // under its NEW id, no re-attach.
+      browser.ws.send(JSON.stringify({ type: 'send', clientId: 'sess-rk-a', text: 'ping a' }));
+      await until(() => (mcpA.prompts.includes('ping a') ? true : undefined));
+
+      // Session B likewise, from its suffixed fallback id.
+      const projDirB = join(claudeHome, 'projects', mungeCwd(cwdB));
+      await mkdir(projDirB, { recursive: true });
+      await writeFile(join(projDirB, 'sess-rk-b.jsonl'), entriesFor('hello from b'));
+      const rkB = await browser.waitFor((m) => m.type === 'client_rekeyed' && m.to === 'sess-rk-b');
+      expect((rkB.from as string).startsWith('ch-dup-')).toBe(true);
+
+      // Final list: two sessions, both under their session ids — no
+      // provisional id left holding a slot.
+      browser.ws.send(JSON.stringify({ type: 'list_clients' }));
+      const list = await browser.waitFor((m) => {
+        if (m.type !== 'client_list') return false;
+        const clients = (m as { clients?: Array<{ clientId: string }> }).clients ?? [];
+        return clients.some((c) => c.clientId === 'sess-rk-b');
+      });
+      const ids = (list.clients as Array<{ clientId: string }>).map((c) => c.clientId).sort();
+      expect(ids).toEqual(['sess-rk-a', 'sess-rk-b']);
+
+      browser.ws.close();
+    } finally {
+      await a.stop();
+      await b.stop();
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ */

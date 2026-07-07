@@ -175,6 +175,38 @@ export async function serve(opts: ServeOptions): Promise<{
     }
   }
 
+  /** Subscribe a browser to a client, returning a detach fn. Hoisted
+   *  out of the deps object because `rekeyBridge` also needs it: the
+   *  detach closures are keyed by clientId, so migrating a viewer to a
+   *  re-keyed client means minting a fresh subscription under the new
+   *  id. */
+  function attachBrowserTo(
+    clientId: string,
+    browser: ServerWebSocket<WsData>,
+  ): (() => void) | null {
+    const conn = clients.get(clientId);
+    if (!conn) return null;
+    let set = attachedBrowsers.get(clientId);
+    if (!set) {
+      set = new Set();
+      attachedBrowsers.set(clientId, set);
+    }
+    set.add(browser);
+    notifyAttachedCount(clientId);
+
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      const s = attachedBrowsers.get(clientId);
+      if (s) {
+        s.delete(browser);
+        if (s.size === 0) attachedBrowsers.delete(clientId);
+      }
+      notifyAttachedCount(clientId);
+    };
+  }
+
   /* ----------------------------- WS handlers ---------------------------- */
 
   const handlers = makeWsHandlers({
@@ -275,6 +307,41 @@ export async function serve(opts: ServeOptions): Promise<{
       });
       return;
     },
+    rekeyBridge(from, to) {
+      const conn = clients.get(from);
+      if (!conn) return null;
+      if (clients.has(to)) return null;
+      // Buffered frames carry the id they were relayed under — retag
+      // them, or a viewer attaching to the new id would replay frames
+      // filed under a client that no longer exists.
+      const moved: BridgeConn = {
+        ...conn,
+        clientId: to,
+        history: conn.history.map((f) => ({ ...f, clientId: to })),
+      };
+      clients.delete(from);
+      clients.set(to, moved);
+      // A viewer-chosen alias names the session, not the id — carry it.
+      const alias = renames.get(from);
+      if (alias !== undefined) {
+        renames.delete(from);
+        renames.set(to, alias);
+      }
+      // Migrate attached viewers without detaching them: each gets a
+      // fresh subscription under the new id (the old detach closures
+      // are keyed to `from`, whose set is gone — dropped uncalled).
+      const watchers = attachedBrowsers.get(from);
+      attachedBrowsers.delete(from);
+      attachedBrowsers.set(to, new Set());
+      if (watchers) {
+        for (const browser of watchers) {
+          if (browser.data.clientId !== from) continue;
+          browser.data.clientId = to;
+          browser.data.detach = attachBrowserTo(to, browser);
+        }
+      }
+      return moved;
+    },
     setBridgeStatus(clientId, status: ClientStatus) {
       const conn = clients.get(clientId);
       if (!conn) return;
@@ -303,29 +370,7 @@ export async function serve(opts: ServeOptions): Promise<{
         return false;
       }
     },
-    attachBrowser(clientId, browser) {
-      const conn = clients.get(clientId);
-      if (!conn) return null;
-      let set = attachedBrowsers.get(clientId);
-      if (!set) {
-        set = new Set();
-        attachedBrowsers.set(clientId, set);
-      }
-      set.add(browser);
-      notifyAttachedCount(clientId);
-
-      let detached = false;
-      return () => {
-        if (detached) return;
-        detached = true;
-        const s = attachedBrowsers.get(clientId);
-        if (s) {
-          s.delete(browser);
-          if (s.size === 0) attachedBrowsers.delete(clientId);
-        }
-        notifyAttachedCount(clientId);
-      };
-    },
+    attachBrowser: attachBrowserTo,
     broadcastToBrowsers(clientId, frame) {
       const set = attachedBrowsers.get(clientId);
       if (!set) return;

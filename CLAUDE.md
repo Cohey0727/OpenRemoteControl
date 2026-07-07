@@ -324,11 +324,16 @@ Two boundaries: browser ↔ `orc serve` on `/ws`, and bridge ↔
 
 - **Browser → Server (`/ws`).** Pick which client to watch, forward
   user prompts and permission decisions. Frames: `list_clients`,
-  `attach`, `detach`, `send`, `permission_response`.
+  `attach`, `detach`, `send`, `permission_response`, `rename`,
+  `question_response`.
 - **Server → Browser (`/ws`).** Broadcast the live client list,
   forward frames from the client the browser is watching. Frames:
   `clients_changed`, `client_registered`, `client_removed`,
-  `client_list`, a `user` frame (the server's echo of any client's
+  `client_list`, `client_rekeyed { from, to, client }` (a bridge
+  re-keyed its client — same session, new id; the server has already
+  migrated the attachment, so viewers swap the sidebar row, move
+  their buffers, and rewrite `/sessions/<id>` in place, never
+  treating it as a disconnect), a `user` frame (the server's echo of any client's
   `send`, so every attached view renders the same prompt — this is
   what keeps a shared session in sync), plus whatever per-client
   frames the user's bridge sends (text / text_delta / thinking /
@@ -347,13 +352,19 @@ Two boundaries: browser ↔ `orc serve` on `/ws`, and bridge ↔
   e.g. typed into the shared terminal and replayed from the
   transcript; prompts sent through the server are echoed by the server
   itself and must NOT be re-sent by the bridge — the attach bridge filters
-  them by the `[open-rc]` marker), `status`, and `unregister`.
+  them by the `[open-rc]` marker), `status`, `unregister`, and
+  `rekey { clientId }` — move this client to a new id in place
+  (attached viewers, history buffer, and viewer alias migrate;
+  answered with a `rekeyed` ack, or an `error` frame if the id is
+  taken). `orc channel` uses it to trade its provisional host+cwd id
+  for the session id once transcript discovery finds it.
 - **Server → Bridge (`/agent`).** `prompt` (a browser/tui `send`),
   `permission_response`, `question_response { requestId, answers }`
   (a viewer's answer to a relayed AskUserQuestion — the `ask`
   PreToolUse hook waits on it and returns it as the tool decision,
   which Claude accepts as the answer; verified empirically
-  2026-07-03), `attached { count }` — how many viewers are
+  2026-07-03), `rekeyed { clientId }` (ack of a `rekey` — the client
+  now lives under this id), `attached { count }` — how many viewers are
   watching, sent on every attach/detach so the Stop-hook linger runs
   only while someone is attached — and `ping` every 30 s (keepalive:
   proxies like Cloudflare drop idle WebSockets at ~100 s, and the
@@ -420,8 +431,11 @@ one process claude spawns: `src/channel/mcp.ts` (the MCP channel
 server — `claude/channel` notifications in, permission relay out,
 stdout reserved for the MCP transport) and the channel-mode branch of
 `src/cli/attach.ts` (the same `/agent` bridge machinery, with lazy
-transcript discovery via `src/channel/discover.ts` and a stable
-host+cwd clientId), wired together by `src/cli/channel.ts`. The Stop
+transcript discovery via `src/channel/discover.ts` and a provisional
+host+cwd clientId that is re-keyed to the session id at discovery —
+`rekey` frame; frees the per-cwd id so multiple sessions in one
+directory can be shared at once), wired together by
+`src/cli/channel.ts`. The Stop
 hook short-circuits when `channel.marker` (`src/attach/state.ts`) is
 present — channel mode has no queue and needs no linger.
 

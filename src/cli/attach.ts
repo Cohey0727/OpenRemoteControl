@@ -242,6 +242,15 @@ export interface ChannelModeHooks {
   readonly onPermissionResponse?: (requestId: string, approved: boolean) => Promise<void>;
   /** Transcript-discovery poll cadence override (tests). */
   readonly discoverPollMs?: number;
+  /**
+   * Once discovery reveals the session id, re-key the registered
+   * client to it (`rekey` frame). The provisional host+cwd id is only
+   * needed because claude spawns the channel before the session writes
+   * its first transcript line; re-keying frees it for the next session
+   * in the same cwd, so several sessions per directory can be shared
+   * at once. Off when the user forced an explicit --client-id.
+   */
+  readonly rekeyToSessionId?: boolean;
 }
 
 export interface AttachOrcOptions {
@@ -282,15 +291,22 @@ export async function runAttachOrc(
       ...(opts.claudeHome !== undefined ? { claudeHome: opts.claudeHome } : {}),
     });
   }
-  const clientId = flags.clientId ?? located?.sessionId;
-  if (clientId === undefined) {
+  const initialClientId = flags.clientId ?? located?.sessionId;
+  if (initialClientId === undefined) {
     throw new Error('channel mode requires an explicit clientId');
   }
+  /** Current client id on the server. Channel mode starts with the
+   *  provisional host+cwd id and re-keys to the session id once the
+   *  transcript is discovered (see `pendingRekey`). */
+  let clientId: string = initialClientId;
 
   let ws: WebSocket | null = null;
   let tail: TailHandle | null = null;
   let stopped = false;
   let registeredOnce = false;
+  /** Session id we want to re-key to, until the server acks it. Kept
+   *  across reconnects: registration re-sends it after `registered`. */
+  let pendingRekey: string | null = null;
   let turn: TurnState = { turnOpen: false, lastTs: null };
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let doneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -311,6 +327,12 @@ export async function runAttachOrc(
     // no terminal capture).
     if (channel) await touchChannelMarker(d);
     lastStopMtime = await stopMarkerMtime(d);
+    // Now that the session id is known, trade the provisional id for
+    // it — frees the host+cwd id for the next session in this cwd.
+    if (channel?.rekeyToSessionId && found.sessionId !== clientId) {
+      pendingRekey = found.sessionId;
+      sendRekey();
+    }
   };
 
   if (located) await adoptTranscript(located);
@@ -342,6 +364,16 @@ export async function runAttachOrc(
         // close handler owns recovery
       }
     }
+  };
+
+  /** Ask the server to move this client to the discovered session id.
+   *  Sent on adoption and re-sent after every (re)registration until
+   *  the `rekeyed` ack lands; a rejection (id already in use — the
+   *  documented same-cwd discovery race) is logged and the bridge
+   *  keeps serving under its current id. */
+  const sendRekey = (): void => {
+    if (pendingRekey === null || pendingRekey === clientId) return;
+    send({ type: 'rekey', clientId: pendingRekey });
   };
 
   /** Last time conversation frames flowed (feeds the stuck-turn guard). */
@@ -620,7 +652,25 @@ export async function runAttachOrc(
         registeredOnce = true;
         resolveFirstRegister?.();
         resolveFirstRegister = null;
+        sendRekey(); // reconnect before the ack: ask again
         maybeStartStreaming();
+        return;
+      }
+      case 'rekeyed': {
+        if (typeof msg.clientId !== 'string' || msg.clientId === '') return;
+        if (pendingRekey === msg.clientId) pendingRekey = null;
+        if (clientId !== msg.clientId) {
+          log(`${tag}: client id updated: ${clientId} → ${msg.clientId}`);
+          clientId = msg.clientId;
+          const d = dir;
+          if (d) {
+            void writeBridgeInfo(d, {
+              clientId,
+              server: flags.server,
+              startedAt: Date.now(),
+            }).catch(() => {});
+          }
+        }
         return;
       }
       case 'error': {
@@ -817,14 +867,20 @@ export async function runAttachOrc(
   log(`${tag}: open ${sessionUrl}`);
 
   return {
-    clientId,
+    // Live getters: channel mode re-keys the client to the session id
+    // after discovery, and the deep link moves with it.
+    get clientId() {
+      return clientId;
+    },
     get sessionId() {
       return located?.sessionId ?? null;
     },
     get transcriptPath() {
       return located?.path ?? null;
     },
-    sessionUrl,
+    get sessionUrl() {
+      return sessionUrlFromAgent(flags.server, clientId);
+    },
     send,
     stop: () => shutdown('stopped'),
   };

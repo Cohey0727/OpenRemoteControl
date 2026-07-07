@@ -34,6 +34,9 @@ export interface StoreState {
   iosHintVisible: boolean;
   /** Bumped when the attached client vanishes; App navigates home on it. */
   orphanSignal: number;
+  /** Last server-side id change (`client_rekeyed`); App rewrites the URL
+   *  from `from` to `to` on it. `seq` distinguishes repeat rekeys. */
+  rekey: { seq: number; from: string; to: string } | null;
 }
 
 const RECONNECT_DELAYS = [500, 1000, 2000, 3000, 5000];
@@ -55,6 +58,13 @@ function retainKeys<T>(m: Record<string, T>, live: Set<string>): Record<string, 
   return changed ? next : m;
 }
 
+function moveKey<T>(m: Record<string, T>, from: string, to: string): Record<string, T> {
+  if (!(from in m)) return m;
+  const next = { ...m, [to]: m[from] as T };
+  delete next[from];
+  return next;
+}
+
 class Store {
   private state: StoreState = {
     clients: [],
@@ -69,6 +79,7 @@ class Store {
     installEvent: null,
     iosHintVisible: false,
     orphanSignal: 0,
+    rekey: null,
   };
   private listeners = new Set<() => void>();
   private ws: WebSocket | undefined;
@@ -246,6 +257,30 @@ class Store {
         this.forgetClient(msg.clientId);
         this.reconcile();
         break;
+      case 'client_rekeyed': {
+        // Same session, new id (e.g. `orc channel` traded its provisional
+        // id for the discovered session id). The server already migrated
+        // our attachment; follow it locally — swap the sidebar row, move
+        // the buffers, and let App rewrite the URL — WITHOUT a detach.
+        const { from, to } = msg;
+        const idx = this.state.clients.findIndex((c) => c.clientId === from);
+        const clients =
+          idx >= 0
+            ? this.state.clients.map((c) => (c.clientId === from ? msg.client : c))
+            : [...this.state.clients, msg.client];
+        this.set({
+          clients,
+          messagesByClient: moveKey(this.state.messagesByClient, from, to),
+          promptsByClient: moveKey(this.state.promptsByClient, from, to),
+          busy: moveKey(this.state.busy, from, to),
+          streamByClient: moveKey(this.state.streamByClient, from, to),
+          rekey: { seq: (this.state.rekey?.seq ?? 0) + 1, from, to },
+        });
+        if (this.attachedId === from) this.attachedId = to;
+        if (this.desiredId === from) this.desiredId = to;
+        this.reconcile();
+        break;
+      }
       case 'user':
         this.appendFor(msg.clientId, { kind: 'user', text: msg.text });
         break;

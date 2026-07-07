@@ -631,6 +631,16 @@ were rejected).
 - Session→browser stays the transcript replay + tail shared with
   `orc attach`, discovered lazily (`src/channel/discover.ts`) because
   claude spawns the channel before the session writes its first line.
+- Client identity (added 2026-07-07): registration uses a
+  **provisional host+cwd id** (the session id doesn't exist yet at
+  spawn time), and discovery triggers a `rekey` frame that moves the
+  client to the session id **in place** — attached viewers, the
+  history buffer, and any viewer alias migrate server-side, viewers
+  get `client_rekeyed { from, to }` and rewrite their URL. This frees
+  the per-cwd id, so multiple sessions in one directory can be shared
+  at once; a channel that catches the provisional id still taken
+  falls back to a random-suffixed one (also temporary). `--client-id`
+  keeps the given id for good.
 
 **Definition of done — ✓ met (verified empirically 2026-07-06, claude
 v2.1.201).** (a) Prompt delivered to a fully idle session that had

@@ -236,6 +236,16 @@ the transcript replay + tail shared with `orc attach` — discovered
 lazily, because claude spawns the channel before the session writes
 its first transcript line.
 
+Session ids resolve themselves: the channel registers under a
+provisional per-cwd id (the session id doesn't exist yet at spawn
+time) and re-keys to the real session id the moment the transcript
+appears — the sidebar row, an attached browser/tui, and the
+`/sessions/<id>` deep link all follow in place. Because the
+provisional id is freed by the rekey, **several sessions in the same
+directory can be shared at once** (a newcomer that catches the
+provisional id still taken just registers under a suffixed one until
+its own rekey).
+
 Research-preview caveats, worth knowing:
 
 - The `--dangerously-load-development-channels` flag is required —
@@ -437,7 +447,9 @@ orc channel         # spawned BY claude itself (an MCP channel server
                            else ws://127.0.0.1:7322/agent)
   --label            <s>   Sidebar label (default user@host (channel))
   --cwd              <p>   Project dir (default: where claude spawned it)
-  --client-id        <s>   Explicit clientId (default: stable per host+cwd)
+  --client-id        <s>   Explicit clientId, kept for good (default: a
+                           provisional host+cwd id, re-keyed to the
+                           session id once the transcript appears)
 
 orc hook <stop|prompt|end>   # internal: Claude Code hook handlers,
                                  # wired into ~/.claude/settings.json by

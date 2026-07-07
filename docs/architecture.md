@@ -313,14 +313,27 @@ Composition — two halves glued back to back inside one process:
   `orc attach` — register, transcript replay + tail for the
   session→browser direction, `prompt`/`permission_response` frames
   inbound. Registration retries forever (claude may start before
-  `orc serve` is up), and the clientId is a stable hash of host+cwd
-  (the session id is unknown at spawn time).
+  `orc serve` is up). The clientId is only PROVISIONAL: a hash of
+  host+cwd (the session id is unknown at spawn time — claude spawns
+  the channel before the session writes its transcript). Once
+  discovery finds the transcript, the bridge sends a `rekey` frame
+  and the server moves the client to the session id in place —
+  attached viewers, the history buffer, and any viewer alias follow
+  without a detach, and viewers get a `client_rekeyed { from, to }`
+  broadcast to rewrite their deep link. That frees the provisional
+  id, so a second session started in the same cwd can register (if
+  the provisional id is momentarily still held, the newcomer falls
+  back to a random-suffixed one — also temporary). `--client-id`
+  disables re-keying and keeps the given id for good.
 - **Lazy transcript discovery** (`src/channel/discover.ts`): claude
   spawns the channel before the session writes its first transcript
   line, so "newest JSONL in the project dir" would find a PREVIOUS
   session. The channel instead polls for the first `*.jsonl` whose
   mtime is newer than its own start time. (Accepted PoC limitation:
-  two sessions started concurrently in the same cwd can race this.)
+  two sessions started concurrently in the same cwd can race this —
+  but since the rekey-to-session-id step, a double adoption at least
+  becomes VISIBLE: the second `rekey` to the same session id is
+  rejected by the server instead of silently double-bridging.)
 - **Hook short-circuit** (`channel.marker` in `src/attach/state.ts`,
   checked by `src/cli/attach-hooks.ts`): while a session is bridged in
   channel mode the Stop hook exits immediately — there is no queue to
@@ -459,6 +472,11 @@ type BrowserServerMessage =
   | { type: 'client_removed'; clientId: string; reason?: string }
   // Broadcast whenever the set of clients changes (any reason).
   | { type: 'clients_changed'; clients: ClientInfo[] }
+  // Broadcast when a bridge re-keys its client to a new id (e.g.
+  // `orc channel` trading its provisional host+cwd id for the
+  // discovered session id). Same session, new id: viewers keep the
+  // attachment (migrated server-side) and rewrite their URL.
+  | { type: 'client_rekeyed'; from: string; to: string; client: ClientInfo }
   // Streamed frames from the attached client, verbatim.
   | WsServerMessage;
 ```

@@ -174,6 +174,23 @@ export const ClientsChangedMessage = z.object({
 });
 export type ClientsChangedMessage = z.infer<typeof ClientsChangedMessage>;
 
+/**
+ * Broadcast when a bridge re-keys its client to a new id (`rekey`
+ * frame). `orc channel` registers under a provisional host+cwd id
+ * before the session's transcript exists, then re-keys to the real
+ * session id once discovery finds it. Carrying `from`/`to` (instead of
+ * a removed+registered pair) lets viewers follow the same session —
+ * keep their attachment, move their buffers, rewrite their URL —
+ * without treating it as a disconnect.
+ */
+export const ClientRekeyedMessage = z.object({
+  type: z.literal('client_rekeyed'),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  client: ClientInfo,
+});
+export type ClientRekeyedMessage = z.infer<typeof ClientRekeyedMessage>;
+
 /* Per-client frames relayed from bridge → browser. The server adds
    `clientId`; the bridge never sends it. */
 
@@ -304,6 +321,7 @@ export const ServerBrowserMessage = z.discriminatedUnion('type', [
   ClientRegisteredMessage,
   ClientRemovedMessage,
   ClientsChangedMessage,
+  ClientRekeyedMessage,
   UserMessage,
   TextMessage,
   TextDeltaMessage,
@@ -335,6 +353,21 @@ export const Unregister = z.object({
   type: z.literal('unregister'),
 });
 export type Unregister = z.infer<typeof Unregister>;
+
+/**
+ * Re-key this bridge's client to a new id, keeping every attached
+ * viewer, the history buffer, and any viewer-chosen alias. `orc
+ * channel` sends this once transcript discovery reveals the real
+ * session id (registration happened earlier, under a provisional
+ * host+cwd id — claude spawns the channel before the session writes
+ * its first transcript line). Rejected with an `error` frame if the
+ * requested id is already in use.
+ */
+export const Rekey = z.object({
+  type: z.literal('rekey'),
+  clientId: z.string().min(1),
+});
+export type Rekey = z.infer<typeof Rekey>;
 
 /** Update the client's `status` field (idle/busy/etc). */
 export const StatusUpdate = z.object({
@@ -386,6 +419,7 @@ export type BridgeFrame = z.infer<typeof BridgeFrame>;
 export const BridgeToServer = z.discriminatedUnion('type', [
   Register,
   Unregister,
+  Rekey,
   StatusUpdate,
   BridgeFrame,
 ]);
@@ -425,6 +459,11 @@ export const ServerToBridge = z.discriminatedUnion('type', [
   PromptMessage,
   AttachedCount,
   ServerPing,
+  /** Ack of a `rekey`: the bridge's client now lives under this id. */
+  z.object({
+    type: z.literal('rekeyed'),
+    clientId: z.string().min(1),
+  }),
   z.object({
     type: z.literal('permission_response'),
     requestId: z.string(),

@@ -45,13 +45,21 @@ export interface ChannelCliFlags {
   cwd: string;
   /** Explicit clientId (defaults to a stable per-host/cwd id). */
   clientId: string;
+  /** Re-key the client to the session id once discovery finds the
+   *  transcript (default when `clientId` was NOT forced with
+   *  --client-id). Frees the per-cwd provisional id so several
+   *  sessions in the same directory can be shared at once. */
+  rekeyToSessionId?: boolean;
 }
 
 /**
- * Stable clientId for a project's channel: same host + cwd → same id,
- * so browser deep links survive session restarts. (The session id
- * itself can't serve here — it isn't known until the session writes
- * its transcript, long after registration.)
+ * PROVISIONAL clientId for a project's channel: same host + cwd →
+ * same id. Registration happens before the session id is known
+ * (claude spawns the channel before the session writes its transcript),
+ * so this stands in until discovery — then the bridge re-keys the
+ * client to the session id (`rekey` frame), freeing this id for the
+ * next session started in the same cwd. With --client-id the given id
+ * is kept for good instead.
  */
 export function stableChannelClientId(host: string, cwd: string): string {
   const digest = createHash('sha256').update(`${host}:${cwd}`).digest('hex');
@@ -60,16 +68,18 @@ export function stableChannelClientId(host: string, cwd: string): string {
 
 export function parseChannelFlags(argv: string[]): ChannelCliFlags {
   const flags = parseFlags(argv);
-  const explicit = typeof flags.server === 'string' ? flags.server : undefined;
-  const server = agentUrlFromBase(explicit ?? process.env.ORC_BASE_URL ?? 'ws://127.0.0.1:7322');
+  const explicitServer = typeof flags.server === 'string' ? flags.server : undefined;
+  const server = agentUrlFromBase(
+    explicitServer ?? process.env.ORC_BASE_URL ?? 'ws://127.0.0.1:7322',
+  );
   const cwd = typeof flags.cwd === 'string' ? resolve(flags.cwd) : process.cwd();
   const label =
     typeof flags.label === 'string'
       ? flags.label
       : `${process.env.USER ?? 'user'}@${hostname()} (channel)`;
-  const clientId =
-    typeof flags.clientId === 'string' ? flags.clientId : stableChannelClientId(hostname(), cwd);
-  return { server, label, cwd, clientId };
+  const explicitClientId = typeof flags.clientId === 'string' ? flags.clientId : undefined;
+  const clientId = explicitClientId ?? stableChannelClientId(hostname(), cwd);
+  return { server, label, cwd, clientId, rekeyToSessionId: explicitClientId === undefined };
 }
 
 export interface RunChannelOptions {
@@ -139,11 +149,15 @@ export async function runChannel(
 
   // Register on /agent with endless retry (claude may outlive relay
   // restarts, and may have been started before the relay).
+  let clientId = flags.clientId;
+  /** One immediate collision fallback per retry cycle — a server that
+   *  somehow rejects every id must not turn this into a hot loop. */
+  let rekeyFallbackUsed = false;
   const startBridge = async (): Promise<void> => {
     if (stopped) return;
     try {
       bridge = await runAttachOrc(
-        { server: flags.server, label: flags.label, cwd: flags.cwd, clientId: flags.clientId },
+        { server: flags.server, label: flags.label, cwd: flags.cwd, clientId },
         {
           log,
           ...(opts.attachBaseDir !== undefined ? { attachBaseDir: opts.attachBaseDir } : {}),
@@ -157,14 +171,31 @@ export async function runChannel(
             onPermissionResponse: (requestId, approved) =>
               mcp.notifyPermissionVerdict(requestId, approved),
             ...(opts.discoverPollMs !== undefined ? { discoverPollMs: opts.discoverPollMs } : {}),
+            ...(flags.rekeyToSessionId === true ? { rekeyToSessionId: true } : {}),
           },
         },
       );
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Another session in this cwd still holds the provisional id (it
+      // hasn't discovered its own transcript yet, so it hasn't re-keyed).
+      // The id is temporary anyway — fall back to a unique one and let
+      // the rekey-at-discovery replace it with the session id.
+      if (
+        flags.rekeyToSessionId === true &&
+        !rekeyFallbackUsed &&
+        message.includes('clientId already in use')
+      ) {
+        rekeyFallbackUsed = true;
+        clientId = `${flags.clientId}-${crypto.randomUUID().slice(0, 8)}`;
+        log(`orc channel: provisional id taken — registering as ${clientId} instead`);
+        void startBridge();
+        return;
+      }
       const wait = opts.registerRetryMs ?? REGISTER_RETRY_MS;
+      rekeyFallbackUsed = false;
       log(
-        `orc channel: registration failed (${err instanceof Error ? err.message : err}) — ` +
-          `retrying in ${Math.round(wait / 1000)}s`,
+        `orc channel: registration failed (${message}) — retrying in ${Math.round(wait / 1000)}s`,
       );
       retryTimer = setTimeout(() => {
         retryTimer = null;

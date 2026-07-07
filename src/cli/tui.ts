@@ -165,6 +165,19 @@ export async function runTui(flags: TuiFlags): Promise<void> {
           pickClient();
         }
         return;
+      case 'client_rekeyed': {
+        // Same session under a new id (e.g. `orc channel` adopting the
+        // session id). The server migrated our attachment; follow it.
+        const from = msg.from as string;
+        const to = msg.to as string;
+        const c = msg.client as ClientInfo;
+        clients = clients.map((x) => (x.clientId === from ? c : x));
+        if (attached === from) {
+          attached = to;
+          render(`${C.dim}session id updated: ${from} → ${to}${C.off}`);
+        }
+        return;
+      }
     }
 
     // Per-session frames only matter for the attached client.

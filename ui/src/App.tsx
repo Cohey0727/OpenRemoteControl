@@ -21,6 +21,7 @@ export function App() {
 
   const clients = useStore((s) => s.clients);
   const orphanSignal = useStore((s) => s.orphanSignal);
+  const rekey = useStore((s) => s.rekey);
   const client = routeId ? (clients.find((c) => c.clientId === routeId) ?? null) : null;
 
   // URL → store: reconcile the server-side attachment with the route.
@@ -32,6 +33,14 @@ export function App() {
   useEffect(() => {
     if (orphanSignal > 0) navigate('/', { replace: true });
   }, [orphanSignal, navigate]);
+
+  // The session we're looking at changed its id (`client_rekeyed`) —
+  // same session, new deep link. Follow it in place.
+  useEffect(() => {
+    if (rekey && routeId === rekey.from) {
+      navigate(`/sessions/${encodeURIComponent(rekey.to)}`, { replace: true });
+    }
+  }, [rekey, routeId, navigate]);
 
   // Mobile: the visible pane is derived from the route. The rules only
   // bite inside the max-width media query, so setting them on desktop is

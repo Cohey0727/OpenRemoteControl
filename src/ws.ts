@@ -76,6 +76,12 @@ export interface WsHandlerDeps {
   }) => BridgeConn;
   /** Remove a bridge by clientId. Idempotent. */
   readonly removeBridge: (clientId: string) => void;
+  /**
+   * Move a bridge's client to a new id, migrating attached browsers,
+   * the history buffer, and any viewer alias. Returns the moved conn,
+   * or null when `from` is unknown or `to` is already in use.
+   */
+  readonly rekeyBridge: (from: string, to: string) => BridgeConn | null;
   /** Set/clear a viewer-chosen display name for a client and broadcast
    *  the updated list. Empty label clears the alias. */
   readonly renameClient: (clientId: string, label: string) => void;
@@ -325,6 +331,7 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
   const {
     registerBridge,
     removeBridge,
+    rekeyBridge,
     setBridgeStatus,
     touchBridge,
     broadcastToBrowsers,
@@ -406,6 +413,38 @@ function makeBridgeHandlers(deps: WsHandlerDeps) {
       case 'register':
         // Re-register is treated as a no-op (idempotent).
         return;
+      case 'rekey': {
+        const to = msg.clientId.trim();
+        if (to === '' || to === clientId) return; // nothing to do
+        const moved = rekeyBridge(clientId, to);
+        if (!moved) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: 'error',
+                message: `rekey failed: clientId already in use: ${to}`,
+              }),
+            );
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        ws.data.registeredClientId = moved.clientId;
+        try {
+          ws.send(JSON.stringify({ type: 'rekeyed', clientId: moved.clientId }));
+        } catch {
+          // ignore
+        }
+        broadcastServerMessage({
+          type: 'client_rekeyed',
+          from: clientId,
+          to: moved.clientId,
+          client: moved.info(),
+        });
+        broadcastServerMessage({ type: 'clients_changed', clients: deps.listClients() });
+        return;
+      }
       case 'unregister': {
         // Explicit goodbye. Clear the registered id first so the close
         // handler (which fires from ws.close below) doesn't broadcast a

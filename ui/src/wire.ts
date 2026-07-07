@@ -47,6 +47,7 @@ export type ServerBrowserMessage =
   | { type: 'client_registered'; client: ClientInfo }
   | { type: 'client_removed'; clientId: string }
   | { type: 'clients_changed'; clients: ClientInfo[] }
+  | { type: 'client_rekeyed'; from: string; to: string; client: ClientInfo }
   | { type: 'user'; clientId: string; text: string }
   | { type: 'text'; clientId: string; text: string }
   | { type: 'text_delta'; clientId: string; text: string }

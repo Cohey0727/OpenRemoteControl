@@ -399,6 +399,95 @@ describe('relay: bridge ↔ browser', () => {
     browser.close();
   });
 
+  test('bridge rekey moves the client to a new id without dropping viewers', async () => {
+    const browser = await openFramed(WS_URL);
+    const bridge = await openFramed(AGENT_URL);
+
+    bridge.ws.send(
+      JSON.stringify({ type: 'register', clientId: 'rk-old', label: 'ch', cwd: '/rk' }),
+    );
+    await browser.waitFor((m) => m.type === 'client_registered');
+    browser.ws.send(JSON.stringify({ type: 'attach', clientId: 'rk-old' }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Some history under the old id.
+    bridge.ws.send(JSON.stringify({ type: 'text', text: 'before rekey' }));
+    await browser.waitFor((m) => m.type === 'text');
+
+    // Rekey → ack to the bridge, client_rekeyed to every browser.
+    bridge.ws.send(JSON.stringify({ type: 'rekey', clientId: 'rk-new' }));
+    const acked = await bridge.waitFor((m) => m.type === 'rekeyed');
+    expect(acked.clientId).toBe('rk-new');
+    const rekeyed = await browser.waitFor((m) => m.type === 'client_rekeyed');
+    expect(rekeyed.from).toBe('rk-old');
+    expect(rekeyed.to).toBe('rk-new');
+    expect((rekeyed.client as { clientId: string }).clientId).toBe('rk-new');
+
+    // The list now shows the new id only.
+    browser.ws.send(JSON.stringify({ type: 'list_clients' }));
+    const list = await browser.waitFor(
+      (m) =>
+        m.type === 'client_list' &&
+        (m as unknown as { clients: { clientId: string }[] }).clients.some(
+          (c) => c.clientId === 'rk-new',
+        ),
+    );
+    expect((list.clients as Array<{ clientId: string }>).some((c) => c.clientId === 'rk-old')).toBe(
+      false,
+    );
+
+    // The attachment survived the rekey: live frames arrive under the
+    // NEW id with no re-attach, and send routes to the bridge.
+    bridge.ws.send(JSON.stringify({ type: 'text', text: 'after rekey' }));
+    const after = await browser.waitFor(
+      (m) => m.type === 'text' && (m as { text?: string }).text === 'after rekey',
+    );
+    expect(after.clientId).toBe('rk-new');
+    browser.ws.send(JSON.stringify({ type: 'send', clientId: 'rk-new', text: 'hi' }));
+    const prompt = await bridge.waitFor((m) => m.type === 'prompt');
+    expect(prompt.text).toBe('hi');
+
+    // History moved AND was retagged: a fresh viewer attaching to the
+    // new id replays the pre-rekey frames under the new id.
+    const late = await openFramed(WS_URL);
+    late.ws.send(JSON.stringify({ type: 'attach', clientId: 'rk-new' }));
+    const replayed = await late.waitFor(
+      (m) => m.type === 'text' && (m as { text?: string }).text === 'before rekey',
+    );
+    expect(replayed.clientId).toBe('rk-new');
+
+    browser.close();
+    late.close();
+    bridge.close();
+    await new Promise((r) => setTimeout(r, 80));
+  });
+
+  test('rekey to an occupied id is rejected and the old id keeps working', async () => {
+    const browser = await openFramed(WS_URL);
+    const bridge1 = await openFramed(AGENT_URL);
+    const bridge2 = await openFramed(AGENT_URL);
+
+    bridge1.ws.send(JSON.stringify({ type: 'register', clientId: 'rk-a', label: 'a', cwd: '/a' }));
+    bridge2.ws.send(JSON.stringify({ type: 'register', clientId: 'rk-b', label: 'b', cwd: '/b' }));
+    await new Promise((r) => setTimeout(r, 80));
+
+    bridge1.ws.send(JSON.stringify({ type: 'rekey', clientId: 'rk-b' }));
+    const err = await bridge1.waitFor((m) => m.type === 'error');
+    expect(err.message as string).toContain('rekey failed');
+
+    // bridge1 is still reachable under its original id.
+    browser.ws.send(JSON.stringify({ type: 'attach', clientId: 'rk-a' }));
+    await new Promise((r) => setTimeout(r, 50));
+    browser.ws.send(JSON.stringify({ type: 'send', clientId: 'rk-a', text: 'still there?' }));
+    const prompt = await bridge1.waitFor((m) => m.type === 'prompt');
+    expect(prompt.text).toBe('still there?');
+
+    browser.close();
+    bridge1.close();
+    bridge2.close();
+    await new Promise((r) => setTimeout(r, 80));
+  });
+
   test('bridge with duplicate clientId is rejected with an error frame', async () => {
     const bridge1 = await openFramed(AGENT_URL);
     const bridge2 = await openFramed(AGENT_URL);
