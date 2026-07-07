@@ -151,7 +151,22 @@ rebuilds the same UX against any provider by relaying the public
   `channelsEnabled`, and channel events are dropped SILENTLY if the
   channel isn't enabled — the bridge emits an `error` frame ("pushed
   to the session channel but the session has not reacted…") after
-  ~20 s of visible silence. VERIFIED EMPIRICALLY 2026-07-06 (claude
+  ~20 s of visible silence. IMPORTANT (2026-07-07): claude spawns the
+  channel MCP server on EVERY session in a project once
+  `mcpServers.orc` is registered — the flag only arms notification
+  delivery. So flagless sessions are auto-shared too; the bridge
+  reads claude's own MCP debug log
+  (`<cache>/claude-cli-nodejs/<munged-cwd>/mcp-logs-orc/*.jsonl`,
+  best-effort, `src/channel/mcp-log.ts`) which says "Channel
+  notifications registered" (flag on) or "Channel notifications
+  skipped" (flag off) AND carries the session id. Flag off →
+  `channelDelivery=false`: prompts fall back to the hook QUEUE (no
+  channel.marker, Stop/UserPromptSubmit hooks deliver — the session
+  behaves like a `/orc` share, turn-boundary latency). The logged
+  session id also PINS transcript discovery (only `<id>.jsonl` is
+  adopted), killing the same-cwd adoption race whenever the log is
+  readable; without the log, behavior falls back to the old mtime
+  heuristic + optimistic channel delivery. VERIFIED EMPIRICALLY 2026-07-06 (claude
   v2.1.201, this machine): (a) prompt delivered to a fully idle
   session that had never taken a turn — no blind spot; (b) permission
   relay round trip — browser approved a Bash/curl call, terminal

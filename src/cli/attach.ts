@@ -53,6 +53,7 @@ import {
   endMarkerExists,
   readQuestion,
   removeAttachDir,
+  removeChannelMarker,
   stopMarkerMtime,
   touchBrowserTurnMarker,
   touchChannelMarker,
@@ -61,6 +62,7 @@ import {
   writeBridgeInfo,
 } from '../attach/state.ts';
 import { waitForNewTranscript } from '../channel/discover.ts';
+import { waitForChannelMcpLog } from '../channel/mcp-log.ts';
 import { type LocatedTranscript, resolveTranscript } from '../transcript/locate.ts';
 import { type TailHandle, readAllLines, tailFile } from '../transcript/tail.ts';
 import { type TranscriptFrame, entryTimestamp, translateEntry } from '../transcript/translate.ts';
@@ -251,6 +253,12 @@ export interface ChannelModeHooks {
    * at once. Off when the user forced an explicit --client-id.
    */
   readonly rekeyToSessionId?: boolean;
+  /** Claude MCP-debug-log cache root override (tests). */
+  readonly mcpLogCacheHome?: string;
+  /** MCP-log poll cadence override (tests). */
+  readonly mcpLogPollMs?: number;
+  /** MCP-log wait timeout override (tests). */
+  readonly mcpLogTimeoutMs?: number;
 }
 
 export interface AttachOrcOptions {
@@ -307,6 +315,19 @@ export async function runAttachOrc(
   /** Session id we want to re-key to, until the server acks it. Kept
    *  across reconnects: registration re-sends it after `registered`. */
   let pendingRekey: string | null = null;
+  /** Channel mode: whether viewer prompts actually reach the session
+   *  as channel notifications. Claude spawns the MCP server on EVERY
+   *  session start — the mcpServers entry is enough — but drops the
+   *  notifications SILENTLY unless the session was started with
+   *  `--dangerously-load-development-channels server:orc`. Claude's
+   *  own MCP debug log says which case we are in; when the flag is
+   *  missing this flips false and prompts fall back to the hook
+   *  queue, exactly like a `/orc` share. Default true (log missing /
+   *  old CLI = keep the previous optimistic behavior + its warning). */
+  let channelDelivery = true;
+  /** Session id claude reported in its MCP debug log (channel mode);
+   *  pins transcript discovery to the exact spawning session. */
+  let expectedSessionId: string | null = null;
   let turn: TurnState = { turnOpen: false, lastTs: null };
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let doneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -324,8 +345,13 @@ export async function runAttachOrc(
     await writeBridgeInfo(d, { clientId, server: flags.server, startedAt: Date.now() });
     // Channel mode leaves a marker so the Stop hook knows delivery is
     // the channel's job and exits without lingering (no queue to poll,
-    // no terminal capture).
-    if (channel) await touchChannelMarker(d);
+    // no terminal capture). In hook-fallback mode (session started
+    // without the channels flag) the marker must be ABSENT — the Stop
+    // hook is the delivery path then, same as a `/orc` share.
+    if (channel) {
+      if (channelDelivery) await touchChannelMarker(d);
+      else await removeChannelMarker(d);
+    }
     lastStopMtime = await stopMarkerMtime(d);
     // Now that the session id is known, trade the provisional id for
     // it — frees the host+cwd id for the next session in this cwd.
@@ -466,9 +492,10 @@ export async function runAttachOrc(
         hookWarningSent = true;
         send({
           type: 'error',
-          message: channel
-            ? 'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — turn dividers and question relay are degraded. Browser→session delivery still works over the channel.'
-            : 'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
+          message:
+            channel && channelDelivery
+              ? 'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — turn dividers and question relay are degraded. Browser→session delivery still works over the channel.'
+              : 'this session does not appear to run the orc hooks (it may have started before `make setup`, or hooks changed since) — browser→session delivery is disabled. Restart the claude session and run /orc again.',
         });
       })();
     }, 5_000);
@@ -685,12 +712,22 @@ export async function runAttachOrc(
       }
       case 'prompt': {
         if (typeof msg.text === 'string' && msg.text !== '') {
-          if (channel) {
+          // Channel mode delivers over the channel only while the
+          // session actually listens to it; a flagless session falls
+          // back to the hook queue below, like a `/orc` share.
+          if (channel && channelDelivery) {
             deliverViaChannel(msg.text);
             return;
           }
           const d = dir;
-          if (!d) return;
+          if (!d) {
+            send({
+              type: 'error',
+              message:
+                'message dropped — the session cannot be identified yet (it has not written its transcript); try again after its first turn.',
+            });
+            return;
+          }
           void appendQueue(d, msg.text)
             .then(() => notifyIfNoListener())
             .catch((err) => {
@@ -826,18 +863,52 @@ export async function runAttachOrc(
 
   connect();
 
-  // Channel mode: discover the spawning session's transcript in the
-  // background — the first `*.jsonl` of this cwd written after we
-  // started. Prompts and permission relay work from registration on;
-  // streaming (history + live tail) begins the moment the file exists.
+  // Channel mode: identify the spawning session in the background.
+  // First consult claude's own MCP debug log — it names the session id
+  // and says whether the channels flag is on — then wait for the
+  // transcript (pinned to that id when known). Prompts and permission
+  // relay work from registration on; streaming (history + live tail)
+  // begins the moment the transcript exists.
   if (channel) {
     void (async () => {
+      const info = await waitForChannelMcpLog({
+        cwd: flags.cwd,
+        sinceMs: startedAt,
+        ...(channel.mcpLogCacheHome !== undefined ? { cacheHome: channel.mcpLogCacheHome } : {}),
+        ...(channel.mcpLogPollMs !== undefined ? { pollMs: channel.mcpLogPollMs } : {}),
+        ...(channel.mcpLogTimeoutMs !== undefined ? { timeoutMs: channel.mcpLogTimeoutMs } : {}),
+        cancelled: () => stopped,
+      });
+      if (stopped) return;
+      if (info?.sessionId) expectedSessionId = info.sessionId;
+      if (info?.channelEnabled === false) {
+        // The session runs us as a plain MCP server but drops channel
+        // notifications (no --dangerously-load-development-channels).
+        // Deliver like /orc instead: queue + Stop/UserPromptSubmit
+        // hooks. Sharing stays on; only the instant-delivery is lost.
+        channelDelivery = false;
+        log(
+          `${tag}: session started without the channels flag — falling back to hook-queue delivery (prompts land at turn boundaries)`,
+        );
+        // The session id is known before any transcript exists — set
+        // up the hooks rendezvous now so prompts sent to the still
+        // fresh session queue instead of dropping.
+        if (info.sessionId && !located) {
+          const d = attachDirFor(info.sessionId, opts.attachBaseDir);
+          dir = d;
+          await createAttachDir(d);
+          await writeBridgeInfo(d, { clientId, server: flags.server, startedAt: Date.now() });
+          await removeChannelMarker(d);
+          lastStopMtime = await stopMarkerMtime(d);
+        }
+      }
       const found = await waitForNewTranscript({
         cwd: flags.cwd,
         sinceMs: startedAt,
         ...(opts.claudeHome !== undefined ? { claudeHome: opts.claudeHome } : {}),
         ...(channel.discoverPollMs !== undefined ? { pollMs: channel.discoverPollMs } : {}),
         cancelled: () => stopped,
+        expectSessionId: () => expectedSessionId,
       });
       if (!found || stopped) return;
       await adoptTranscript(found);

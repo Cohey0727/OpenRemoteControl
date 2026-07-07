@@ -246,6 +246,19 @@ directory can be shared at once** (a newcomer that catches the
 provisional id still taken just registers under a suffixed one until
 its own rekey).
 
+One consequence of the MCP registration worth spelling out: claude
+spawns the channel server on **every** session in a project — the
+flag only arms notification delivery. So sessions started **without**
+the flag still show up in the sidebar. The bridge detects that case
+from claude's own MCP debug log and falls back to **hook-queue
+delivery** for those sessions: browser messages are delivered by the
+Stop/UserPromptSubmit hooks at turn boundaries, exactly like a `/orc`
+share — you lose only the instant idle delivery, not the send. The
+same log names the session id up front, so transcript discovery locks
+onto the right session even with several running in one directory.
+If you don't want flagless sessions shared at all, remove the
+`mcpServers.orc` entry (`make teardown`) and use `/orc` per session.
+
 Research-preview caveats, worth knowing:
 
 - The `--dangerously-load-development-channels` flag is required —
@@ -253,8 +266,9 @@ Research-preview caveats, worth knowing:
   preview — and the protocol contract may change between CLI
   releases. Team/Enterprise orgs must enable `channelsEnabled`.
 - Channel events are dropped **silently** if the session was started
-  without the flag; the bridge emits an `error` frame after ~20 s of
-  visible silence so viewers are never left staring.
+  without the flag; besides the log-based fallback above, the bridge
+  emits an `error` frame after ~20 s of visible silence so viewers
+  are never left staring.
 - Available with claude.ai auth, a Console API key, or a third-party
   Anthropic-compatible `ANTHROPIC_BASE_URL` (unlike Remote Control,
   which is locked to claude.ai OAuth). Not available on

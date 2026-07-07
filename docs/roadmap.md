@@ -641,6 +641,17 @@ were rejected).
   at once; a channel that catches the provisional id still taken
   falls back to a random-suffixed one (also temporary). `--client-id`
   keeps the given id for good.
+- Flagless sessions (added 2026-07-07): claude spawns the channel
+  server on EVERY session once `mcpServers.orc` exists — the flag
+  only arms notification delivery, and a flagless session would look
+  shared while dropping every browser prompt silently. The bridge now
+  reads claude's own MCP debug log (`src/channel/mcp-log.ts` —
+  "registered" vs "skipped", plus the session id) and, on "skipped",
+  falls back to **hook-queue delivery** (no `channel.marker`; the
+  Stop/UserPromptSubmit hooks deliver at turn boundaries, like
+  `/orc`). The logged session id also pins lazy discovery to exactly
+  `<id>.jsonl`, retiring the same-cwd adoption race wherever the log
+  is readable.
 
 **Definition of done — ✓ met (verified empirically 2026-07-06, claude
 v2.1.201).** (a) Prompt delivered to a fully idle session that had

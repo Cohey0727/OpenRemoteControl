@@ -36,6 +36,13 @@ export interface DiscoverOptions {
   readonly pollMs?: number;
   /** Returns true when the wait should be abandoned (shutdown). */
   readonly cancelled?: () => boolean;
+  /**
+   * Returns the session id claude reported for THIS connection (read
+   * from its MCP debug log), or null while unknown. When available,
+   * discovery stops guessing by mtime and waits for exactly
+   * `<id>.jsonl` — the same-cwd race disappears.
+   */
+  readonly expectSessionId?: () => string | null;
 }
 
 /** One scan: the newest `*.jsonl` in the project dir modified after
@@ -70,10 +77,29 @@ export async function scanForNewTranscript(
   return { path: newest.path, sessionId: sessionIdOf(newest.path) };
 }
 
+/** Exact-id scan: the transcript of a KNOWN session, or null while it
+ *  hasn't been written yet. Exported for tests. */
+export async function scanForSessionTranscript(
+  cwd: string,
+  sessionId: string,
+  claudeHome?: string,
+): Promise<LocatedTranscript | null> {
+  const path = join(projectTranscriptDir(cwd, claudeHome), `${sessionId}.jsonl`);
+  try {
+    const s = await stat(path);
+    if (!s.isFile()) return null;
+  } catch {
+    return null;
+  }
+  return { path, sessionId };
+}
+
 /**
  * Poll until the session that spawned us starts writing its
  * transcript. Resolves with the located transcript, or null if
- * cancelled first.
+ * cancelled first. While `expectSessionId` reports null the mtime
+ * heuristic runs; once claude's MCP log has named the session, only
+ * that exact transcript is accepted.
  */
 export async function waitForNewTranscript(
   opts: DiscoverOptions,
@@ -81,7 +107,10 @@ export async function waitForNewTranscript(
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
   for (;;) {
     if (opts.cancelled?.() === true) return null;
-    const found = await scanForNewTranscript(opts.cwd, opts.sinceMs, opts.claudeHome);
+    const expected = opts.expectSessionId?.() ?? null;
+    const found = expected
+      ? await scanForSessionTranscript(opts.cwd, expected, opts.claudeHome)
+      : await scanForNewTranscript(opts.cwd, opts.sinceMs, opts.claudeHome);
     if (found) return found;
     await new Promise((r) => setTimeout(r, pollMs));
   }

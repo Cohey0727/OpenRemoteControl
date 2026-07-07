@@ -14,7 +14,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
@@ -23,12 +23,14 @@ import {
   browserTurnMarkerExists,
   channelMarkerExists,
   createAttachDir,
+  drainQueue,
   queueNonEmpty,
   touchChannelMarker,
   writeAttachedCount,
   writeBridgeInfo,
 } from '../src/attach/state.ts';
 import { scanForNewTranscript } from '../src/channel/discover.ts';
+import { channelMcpLogDir, parseChannelMcpLog } from '../src/channel/mcp-log.ts';
 import {
   CHANNEL_SERVER_NAME,
   type ChannelMcp,
@@ -217,6 +219,35 @@ describe('scanForNewTranscript', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  2b. Claude MCP debug-log reading (flag detection + session id)     */
+/* ------------------------------------------------------------------ */
+
+describe('parseChannelMcpLog', () => {
+  const line = (debug: string, sessionId = 'sess-log-1'): string =>
+    `${JSON.stringify({ debug, timestamp: new Date().toISOString(), sessionId, cwd: '/w' })}\n`;
+
+  test('reads the session id and the channel verdict', () => {
+    const registered = parseChannelMcpLog(
+      line('Successfully connected (transport: stdio) in 130ms') +
+        line('Channel notifications registered'),
+    );
+    expect(registered).toEqual({ sessionId: 'sess-log-1', channelEnabled: true });
+
+    const skipped = parseChannelMcpLog(
+      line('Channel notifications skipped: server orc not in --channels list for this session'),
+    );
+    expect(skipped).toEqual({ sessionId: 'sess-log-1', channelEnabled: false });
+  });
+
+  test('tolerates garbage and says "unknown" when the log is silent', () => {
+    expect(parseChannelMcpLog('not json\n{"debug":42}\n')).toEqual({
+      sessionId: null,
+      channelEnabled: null,
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  3. Flags / ids                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -338,6 +369,12 @@ describe('runChannel', () => {
       attachBaseDir: attachBase,
       claudeHome,
       discoverPollMs: 50,
+      // No claude MCP debug log in this fixture: give up on it fast so
+      // heuristic discovery starts (and channelEnabled stays unknown =
+      // optimistic channel delivery, the pre-log behavior).
+      mcpLogCacheHome: join(base, 'no-cache'),
+      mcpLogPollMs: 20,
+      mcpLogTimeoutMs: 100,
     });
 
     try {
@@ -466,6 +503,9 @@ describe('runChannel', () => {
       attachBaseDir: attachBase,
       claudeHome,
       discoverPollMs: 50,
+      mcpLogCacheHome: join(base, 'no-cache'),
+      mcpLogPollMs: 20,
+      mcpLogTimeoutMs: 100,
     });
     const b = await runChannel(mkFlags(cwdB), {
       log: () => {},
@@ -473,6 +513,9 @@ describe('runChannel', () => {
       attachBaseDir: attachBase,
       claudeHome,
       discoverPollMs: 50,
+      mcpLogCacheHome: join(base, 'no-cache'),
+      mcpLogPollMs: 20,
+      mcpLogTimeoutMs: 100,
     });
 
     try {
@@ -525,6 +568,115 @@ describe('runChannel', () => {
     } finally {
       await a.stop();
       await b.stop();
+    }
+  });
+
+  test('flagless session: falls back to hook-queue delivery, discovery pinned to the logged id', async () => {
+    const claudeHome = join(base, 'fb-home');
+    const attachBase = join(base, 'fb-attach');
+    const cacheHome = join(base, 'fb-cache');
+    const cwd = join(base, 'fb-proj');
+    await mkdir(cwd, { recursive: true });
+
+    // Claude's MCP debug log: this session spawned us WITHOUT the
+    // channels flag, and its id is sess-fb-1.
+    const logDir = channelMcpLogDir(cwd, cacheHome);
+    await mkdir(logDir, { recursive: true });
+    const logLine = (debug: string): string =>
+      `${JSON.stringify({ debug, timestamp: new Date().toISOString(), sessionId: 'sess-fb-1', cwd })}\n`;
+    await writeFile(
+      join(logDir, '2026-07-07T00-00-00-000Z.jsonl'),
+      logLine('Successfully connected (transport: stdio) in 130ms') +
+        logLine(
+          'Channel notifications skipped: server orc not in --channels list for this session',
+        ),
+    );
+
+    const mcp = fakeMcp();
+    const handle = await runChannel(
+      {
+        server: AGENT,
+        label: 'fallback-test',
+        cwd,
+        clientId: 'ch-fb',
+        rekeyToSessionId: true,
+      },
+      {
+        log: () => {},
+        mcpFactory: () => mcp,
+        attachBaseDir: attachBase,
+        claudeHome,
+        discoverPollMs: 50,
+        mcpLogCacheHome: cacheHome,
+        mcpLogPollMs: 20,
+        mcpLogTimeoutMs: 2_000,
+      },
+    );
+
+    try {
+      const browser = await open(WS);
+      await browser.waitFor(
+        (m) =>
+          Array.isArray((m as { clients?: Array<{ clientId: string }> }).clients) &&
+          ((m as { clients: Array<{ clientId: string }> }).clients ?? []).some(
+            (c) => c.clientId === 'ch-fb',
+          ),
+      );
+      browser.ws.send(JSON.stringify({ type: 'attach', clientId: 'ch-fb' }));
+
+      // The attach dir (hooks rendezvous) appears as soon as the log
+      // names the session — before any transcript exists.
+      const dir = attachDirFor('sess-fb-1', attachBase);
+      const dirDeadline = Date.now() + 3_000;
+      let dirReady = false;
+      while (Date.now() < dirDeadline) {
+        dirReady = await stat(join(dir, 'bridge.json')).then(
+          (s) => s.isFile(),
+          () => false,
+        );
+        if (dirReady) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(dirReady).toBe(true);
+
+      // A viewer prompt goes to the HOOK QUEUE, not the channel, and
+      // the channel marker is absent so the Stop hook will drain it.
+      browser.ws.send(JSON.stringify({ type: 'send', clientId: 'ch-fb', text: 'queued hello' }));
+      const queueDeadline = Date.now() + 3_000;
+      let queued = false;
+      while (Date.now() < queueDeadline) {
+        if (await queueNonEmpty(dir)) {
+          queued = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(queued).toBe(true);
+      expect(mcp.prompts).toEqual([]);
+      expect(await channelMarkerExists(dir)).toBe(false);
+      expect(await drainQueue(dir)).toEqual(['queued hello']);
+
+      // Discovery is pinned: a fresh FOREIGN transcript in the same cwd
+      // is ignored; the logged session's own transcript is adopted and
+      // the client re-keys to it.
+      const projDir = join(claudeHome, 'projects', mungeCwd(cwd));
+      await mkdir(projDir, { recursive: true });
+      const entry = JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'from the session' }] },
+        timestamp: new Date().toISOString(),
+      });
+      await writeFile(join(projDir, 'sess-other.jsonl'), `${entry}\n`);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(browser.msgs.some((m) => m.type === 'client_rekeyed')).toBe(false);
+
+      await writeFile(join(projDir, 'sess-fb-1.jsonl'), `${entry}\n`);
+      const rekeyed = await browser.waitFor((m) => m.type === 'client_rekeyed');
+      expect(rekeyed.to).toBe('sess-fb-1');
+
+      browser.ws.close();
+    } finally {
+      await handle.stop();
     }
   });
 });

@@ -314,6 +314,12 @@ const channelPath = (dir: string) => join(dir, 'channel.marker');
  *  queue is never written in channel mode, and any linger would only
  *  capture the terminal for nothing. */
 export const touchChannelMarker = (dir: string) => touchMarker(channelPath(dir));
+/** Removed when the channel bridge discovers the session was started
+ *  WITHOUT the channels flag: delivery falls back to the hook queue,
+ *  so the Stop hook must linger and drain like a plain `/orc` share. */
+export const removeChannelMarker = async (dir: string) => {
+  await unlink(channelPath(dir)).catch(() => {});
+};
 export const channelMarkerExists = async (dir: string) =>
   (await markerMtime(channelPath(dir))) !== null;
 

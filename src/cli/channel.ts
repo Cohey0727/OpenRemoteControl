@@ -99,6 +99,12 @@ export interface RunChannelOptions {
   readonly registerRetryMs?: number;
   /** Transcript-discovery poll cadence override (tests). */
   readonly discoverPollMs?: number;
+  /** Claude MCP-debug-log cache root override (tests). */
+  readonly mcpLogCacheHome?: string;
+  /** MCP-log poll cadence override (tests). */
+  readonly mcpLogPollMs?: number;
+  /** MCP-log wait timeout override (tests). */
+  readonly mcpLogTimeoutMs?: number;
 }
 
 export interface ChannelHandle {
@@ -172,6 +178,13 @@ export async function runChannel(
               mcp.notifyPermissionVerdict(requestId, approved),
             ...(opts.discoverPollMs !== undefined ? { discoverPollMs: opts.discoverPollMs } : {}),
             ...(flags.rekeyToSessionId === true ? { rekeyToSessionId: true } : {}),
+            ...(opts.mcpLogCacheHome !== undefined
+              ? { mcpLogCacheHome: opts.mcpLogCacheHome }
+              : {}),
+            ...(opts.mcpLogPollMs !== undefined ? { mcpLogPollMs: opts.mcpLogPollMs } : {}),
+            ...(opts.mcpLogTimeoutMs !== undefined
+              ? { mcpLogTimeoutMs: opts.mcpLogTimeoutMs }
+              : {}),
           },
         },
       );

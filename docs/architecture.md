@@ -325,15 +325,35 @@ Composition — two halves glued back to back inside one process:
   the provisional id is momentarily still held, the newcomer falls
   back to a random-suffixed one — also temporary). `--client-id`
   disables re-keying and keeps the given id for good.
+- **Claude's MCP debug log** (`src/channel/mcp-log.ts`, added
+  2026-07-07): claude writes a per-connection JSONL debug log for
+  every MCP server it spawns
+  (`<cache>/claude-cli-nodejs/<munged-cwd>/mcp-logs-orc/`). Two lines
+  answer questions the MCP protocol never does — "Channel
+  notifications registered" vs "Channel notifications skipped"
+  reveals whether the session was started with the channels flag, and
+  every line carries the **session id**, known the moment claude
+  connects. The bridge polls this log (best-effort; absence or a
+  format change falls back to the old behavior) and uses it two ways:
+  - **Hook-queue fallback.** Claude spawns the channel server on
+    EVERY session in the project — the flag only arms delivery. A
+    flagless session would look shared but drop every browser prompt
+    silently. On "skipped", the bridge flips to hook-queue delivery:
+    no `channel.marker`, prompts go to `queue.ndjson`, and the
+    Stop/UserPromptSubmit hooks deliver at turn boundaries — the
+    session behaves exactly like a `/orc` share.
+  - **Pinned discovery.** With the session id known up front, lazy
+    discovery stops guessing and waits for exactly `<id>.jsonl`.
 - **Lazy transcript discovery** (`src/channel/discover.ts`): claude
   spawns the channel before the session writes its first transcript
   line, so "newest JSONL in the project dir" would find a PREVIOUS
-  session. The channel instead polls for the first `*.jsonl` whose
-  mtime is newer than its own start time. (Accepted PoC limitation:
-  two sessions started concurrently in the same cwd can race this —
-  but since the rekey-to-session-id step, a double adoption at least
-  becomes VISIBLE: the second `rekey` to the same session id is
-  rejected by the server instead of silently double-bridging.)
+  session. While the session id is unknown the channel polls for the
+  first `*.jsonl` whose mtime is newer than its own start time; once
+  the MCP log has named the session it accepts only that transcript.
+  (The old same-cwd race therefore only remains where the log is
+  unavailable — and even there, a double adoption is at least VISIBLE
+  now: the second `rekey` to the same session id is rejected by the
+  server instead of silently double-bridging.)
 - **Hook short-circuit** (`channel.marker` in `src/attach/state.ts`,
   checked by `src/cli/attach-hooks.ts`): while a session is bridged in
   channel mode the Stop hook exits immediately — there is no queue to
