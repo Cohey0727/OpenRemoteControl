@@ -775,8 +775,14 @@ the session runs on (once its transcript reveals it), an abbreviated
 working directory, and a last-activity timestamp. The
 right-hand pane shows the active client's transcript (whatever frames
 the user's bridge sends — typically translated `stream-json` shapes:
-markdown-rendered assistant text, collapsed thinking, tool_use /
-tool_result details, system events, errors). Permission requests get
+markdown-rendered assistant text, collapsed thinking, tool calls,
+system events, errors). Each tool call and its result fold into ONE
+collapsed card (paired by the stream's `tool_use` id when the bridge
+relays it, positionally otherwise) with the input and result nested
+inside — so an autonomous run reads as a scannable list of calls, not
+alternating tool_use / result rows. The collapsed row shows the tool
+name plus a hint (the Bash command line, the file being edited) and a
+`running…` marker until the result lands. Permission requests get
 a centered modal.
 
 Mobile: the sidebar collapses; selecting a row slides the chat pane

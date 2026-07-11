@@ -43,6 +43,10 @@ const ContentBlock = z.looseObject({
   name: z.string().optional(),
   input: z.unknown().optional(),
   content: z.unknown().optional(),
+  /** tool_use block id / tool_result back-reference — lets viewers pair
+   *  a result with its call instead of guessing by position. */
+  id: z.string().optional(),
+  tool_use_id: z.string().optional(),
 });
 type ContentBlock = z.infer<typeof ContentBlock>;
 
@@ -68,8 +72,8 @@ export type TranscriptFrame =
   | { type: 'user'; text: string }
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
-  | { type: 'tool_use'; tool: string; input: string }
-  | { type: 'tool_result'; output: string };
+  | { type: 'tool_use'; tool: string; input: string; id?: string }
+  | { type: 'tool_result'; output: string; toolUseId?: string };
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max)}\n… [truncated]`;
@@ -111,7 +115,13 @@ function fromUserContentBlocks(blocks: readonly ContentBlock[]): TranscriptFrame
     }
     if (block.type === 'tool_result') {
       const output = flattenToolResult(block.content);
-      return [{ type: 'tool_result', output: truncate(output, MAX_TOOL_OUTPUT) }];
+      return [
+        {
+          type: 'tool_result',
+          output: truncate(output, MAX_TOOL_OUTPUT),
+          ...(block.tool_use_id !== undefined ? { toolUseId: block.tool_use_id } : {}),
+        },
+      ];
     }
     return [];
   });
@@ -136,6 +146,7 @@ function fromAssistantContentBlocks(blocks: readonly ContentBlock[]): Transcript
           type: 'tool_use',
           tool: block.name ?? 'unknown',
           input: truncate(input, MAX_TOOL_INPUT),
+          ...(block.id !== undefined ? { id: block.id } : {}),
         },
       ];
     }

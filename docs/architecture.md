@@ -507,8 +507,12 @@ Where `WsServerMessage` is the same shape as today:
 type WsServerMessage =
   | { type: 'text'; sessionId: string; text: string }
   | { type: 'thinking'; sessionId: string; text: string }
-  | { type: 'tool_use'; sessionId: string; tool: string; input: string }
-  | { type: 'tool_result'; sessionId: string; output: string }
+  // `id` / `toolUseId` mirror the stream's tool_use block id and
+  // tool_use_id back-reference (optional — user-authored bridges may
+  // omit them). Viewers use the pair to fold a result into its call's
+  // card; without ids they pair positionally within the turn.
+  | { type: 'tool_use'; sessionId: string; tool: string; input: string; id?: string }
+  | { type: 'tool_result'; sessionId: string; output: string; toolUseId?: string }
   | { type: 'permission_request';
       sessionId: string;
       requestId: string;

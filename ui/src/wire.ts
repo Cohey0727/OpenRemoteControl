@@ -54,8 +54,8 @@ export type ServerBrowserMessage =
   | { type: 'text'; clientId: string; text: string }
   | { type: 'text_delta'; clientId: string; text: string }
   | { type: 'thinking'; clientId: string; text: string }
-  | { type: 'tool_use'; clientId: string; tool: string; input: string }
-  | { type: 'tool_result'; clientId: string; output: string }
+  | { type: 'tool_use'; clientId: string; tool: string; input: string; id?: string }
+  | { type: 'tool_result'; clientId: string; output: string; toolUseId?: string }
   | {
       type: 'permission_request';
       clientId: string;
@@ -74,12 +74,19 @@ export interface PermissionPrompt {
 }
 
 /** A rendered transcript entry. `text_delta` streaming fragments are held
- *  separately in the store (live-only) and never become UiMessages. */
+ *  separately in the store (live-only) and never become UiMessages.
+ *
+ *  A `tool` entry is one tool call and its result folded into a single
+ *  card: it appears when the `tool_use` frame arrives (`output` still
+ *  undefined = running) and is resolved in place when the matching
+ *  `tool_result` lands. `tool_result` survives only as the orphan
+ *  fallback — a result whose call never reached this view (e.g. the
+ *  replay tail was cut between the pair). */
 export type UiMessage =
   | { kind: 'user'; text: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'thinking'; text: string }
-  | { kind: 'tool_use'; tool: string; input: string }
+  | { kind: 'tool'; tool: string; input: string; id?: string; output?: string }
   | { kind: 'tool_result'; output: string }
   | { kind: 'system'; text: string }
   | { kind: 'divider'; text: string }

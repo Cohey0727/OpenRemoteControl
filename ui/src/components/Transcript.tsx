@@ -17,11 +17,13 @@ export function Transcript({ clientId }: { clientId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Keep pinned to the bottom as content grows (new messages or stream).
+  // `messages` (not `.length`): a tool result resolving into an existing
+  // card changes content height without changing the count.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-scroll on content change, not on ref
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, stream, busy]);
+  }, [messages, stream, busy]);
 
   const showLive = stream.length > 0 || busy;
 

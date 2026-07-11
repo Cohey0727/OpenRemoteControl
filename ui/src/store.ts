@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { resolveToolResult } from './messages';
 import type {
   BrowserClientMessage,
   ClientInfo,
@@ -300,11 +301,27 @@ class Store {
         this.appendFor(msg.clientId, { kind: 'thinking', text: msg.text });
         break;
       case 'tool_use':
-        this.appendFor(msg.clientId, { kind: 'tool_use', tool: msg.tool, input: msg.input });
+        this.appendFor(msg.clientId, {
+          kind: 'tool',
+          tool: msg.tool,
+          input: msg.input,
+          id: msg.id,
+        });
         break;
-      case 'tool_result':
-        this.appendFor(msg.clientId, { kind: 'tool_result', output: msg.output });
+      case 'tool_result': {
+        // Fold the result into its pending tool card; only a result
+        // whose call never reached this view renders standalone.
+        const prev = this.state.messagesByClient[msg.clientId] ?? [];
+        const resolved = resolveToolResult(prev, msg.output, msg.toolUseId);
+        if (resolved) {
+          this.set({
+            messagesByClient: { ...this.state.messagesByClient, [msg.clientId]: resolved },
+          });
+        } else {
+          this.appendFor(msg.clientId, { kind: 'tool_result', output: msg.output });
+        }
         break;
+      }
       case 'question': {
         // The bridge re-relays a still-pending question on every attach
         // (transient, never replayed); dedupe by requestId.

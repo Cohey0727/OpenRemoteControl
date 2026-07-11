@@ -21,7 +21,7 @@ export function parseAskQuestions(inputJson: string): QuestionItem[] | null {
 export function AskToolView({ questions }: { questions: QuestionItem[] }) {
   const preview = questions[0]?.question ?? '';
   return (
-    <details className="msg tool_use ask">
+    <details className="msg tool ask">
       <summary>
         <span className="name">AskUserQuestion</span>
         <span className="ask-preview">{preview}</span>

@@ -733,7 +733,7 @@ button {
    log stream: a left rule instead of a full card, so it never
    competes with the assistant's prose or your own messages. */
 .msg.thinking,
-.msg.tool_use,
+.msg.tool,
 .msg.tool_result {
   background: transparent;
   border: none;
@@ -746,28 +746,66 @@ button {
   font-style: italic;
   font-size: 0.86rem;
 }
-.msg.tool_use,
+.msg.tool,
 .msg.tool_result {
   font-family: var(--font-mono);
   font-size: 0.84rem;
 }
-.msg.tool_use {
+/* One tool call = one card. Green edge once the result has landed,
+   neutral while the call is still running. */
+.msg.tool {
+  border-left-color: var(--status-success);
+}
+.msg.tool.pending {
   border-left-color: var(--fg-subtle);
 }
 .msg.tool_result {
   border-left-color: var(--status-success);
 }
-.msg.tool_use .name {
+.msg.tool .name {
   color: var(--fg-muted);
   font-weight: 600;
   margin-right: 0.4rem;
+}
+.msg.tool .hint {
+  color: var(--fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.msg.tool .state {
+  color: var(--fg-subtle);
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+/* Nested input/result sections inside the card. */
+.tool-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.msg.tool .tool-part {
+  border-left: 2px solid var(--hairline);
+  padding-left: 0.6rem;
+}
+.msg.tool .tool-part .name {
+  color: var(--fg-subtle);
+  font-weight: 600;
+}
+.msg.tool .tool-part.result {
+  border-left-color: var(--status-success);
+}
+.msg.tool .tool-part.result .name {
+  color: var(--status-success);
 }
 .msg.tool_result .name {
   color: var(--status-success);
   font-weight: 600;
   margin-right: 0.4rem;
 }
-.msg.tool_use pre,
+.msg.tool pre,
 .msg.tool_result pre {
   margin: 0.4rem 0 0;
   padding: 0.5rem 0.6rem;
@@ -917,7 +955,7 @@ button {
 /* Display-only view of the AskUserQuestion tool call (transcript
    side): the question text previews in the collapsed summary, and
    options render as inert rows, never as raw JSON. */
-.msg.tool_use.ask .ask-preview {
+.msg.tool.ask .ask-preview {
   color: var(--fg-subtle);
   font-weight: 400;
   white-space: nowrap;
@@ -926,7 +964,7 @@ button {
   min-width: 0;
   flex: 1;
 }
-.msg.tool_use.ask .ask-body {
+.msg.tool.ask .ask-body {
   font-family: var(--font-body);
   font-size: 0.9rem;
 }

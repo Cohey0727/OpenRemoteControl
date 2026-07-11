@@ -58,8 +58,8 @@ describe('translateEntry — user entries', () => {
       },
     };
     expect(translateEntry(entry)).toEqual([
-      { type: 'tool_result', output: 'ls output' },
-      { type: 'tool_result', output: 'block out' },
+      { type: 'tool_result', output: 'ls output', toolUseId: 't1' },
+      { type: 'tool_result', output: 'block out', toolUseId: 't2' },
     ]);
   });
 
@@ -96,7 +96,7 @@ describe('translateEntry — assistant entries', () => {
     expect(translateEntry(entry)).toEqual([
       { type: 'thinking', text: 'hmm' },
       { type: 'text', text: 'the answer' },
-      { type: 'tool_use', tool: 'Bash', input: '{"command":"ls"}' },
+      { type: 'tool_use', tool: 'Bash', input: '{"command":"ls"}', id: 't1' },
     ]);
   });
 

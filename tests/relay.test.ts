@@ -186,8 +186,12 @@ describe('relay: bridge ↔ browser', () => {
     // Bridge streams a few frames.
     bridge.ws.send(JSON.stringify({ type: 'text', text: 'hello' }));
     bridge.ws.send(JSON.stringify({ type: 'thinking', text: 'pondering' }));
-    bridge.ws.send(JSON.stringify({ type: 'tool_use', tool: 'Bash', input: '{"cmd":"ls"}' }));
-    bridge.ws.send(JSON.stringify({ type: 'tool_result', output: 'a.txt\nb.txt' }));
+    bridge.ws.send(
+      JSON.stringify({ type: 'tool_use', tool: 'Bash', input: '{"cmd":"ls"}', id: 'call-1' }),
+    );
+    bridge.ws.send(
+      JSON.stringify({ type: 'tool_result', output: 'a.txt\nb.txt', toolUseId: 'call-1' }),
+    );
     bridge.ws.send(
       JSON.stringify({
         type: 'permission_request',
@@ -206,6 +210,11 @@ describe('relay: bridge ↔ browser', () => {
     expect(types).toContain('tool_result');
     expect(types).toContain('permission_request');
     expect(types).toContain('done');
+
+    // The pairing ids ride through the relay untouched — viewers use
+    // them to fold a result into its tool_use card.
+    expect(collected.find((f) => f.type === 'tool_use')?.id).toBe('call-1');
+    expect(collected.find((f) => f.type === 'tool_result')?.toolUseId).toBe('call-1');
 
     // All relayed frames must carry clientId === 'test-1'.
     const relayedTypes = new Set([

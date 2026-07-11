@@ -1,4 +1,5 @@
 import { formatJson } from '../format';
+import { toolSummaryHint } from '../messages';
 import type { UiMessage } from '../wire';
 import { AskToolView, parseAskQuestions } from './AskToolView';
 import { Markdown } from './Markdown';
@@ -29,17 +30,39 @@ export function MessageView({ clientId, message }: { clientId: string; message: 
           <Markdown text={message.text} />
         </details>
       );
-    case 'tool_use': {
+    case 'tool': {
       if (message.tool === 'AskUserQuestion') {
         const questions = parseAskQuestions(message.input);
         if (questions) return <AskToolView questions={questions} />;
       }
+      // One card per tool call: the summary row names the tool (with a
+      // hint like the Bash command), the body nests the call's input
+      // and — once it lands — its result.
+      const pending = message.output === undefined;
+      const hint = toolSummaryHint(message.input);
       return (
-        <details className="msg tool_use">
+        <details className={`msg tool${pending ? ' pending' : ''}`}>
           <summary>
             <span className="name">{message.tool}</span>
+            {hint ? <span className="hint">{hint}</span> : null}
+            {pending ? <span className="state">running…</span> : null}
           </summary>
-          <pre className="body">{formatJson(message.input)}</pre>
+          <div className="tool-parts">
+            <details className="tool-part">
+              <summary>
+                <span className="name">input</span>
+              </summary>
+              <pre className="body">{formatJson(message.input)}</pre>
+            </details>
+            {pending ? null : (
+              <details className="tool-part result">
+                <summary>
+                  <span className="name">result</span>
+                </summary>
+                <pre className="body">{message.output}</pre>
+              </details>
+            )}
+          </div>
         </details>
       );
     }

@@ -243,12 +243,19 @@ export const ToolUseMessage = WithClientId.extend({
   type: z.literal('tool_use'),
   tool: z.string(),
   input: z.string(),
+  /** tool_use block id from the session's stream/transcript. Optional —
+   *  user-authored bridges may omit it; viewers then pair results with
+   *  calls positionally instead of by id. */
+  id: z.string().optional(),
 });
 export type ToolUseMessage = z.infer<typeof ToolUseMessage>;
 
 export const ToolResultMessage = WithClientId.extend({
   type: z.literal('tool_result'),
   output: z.string(),
+  /** Back-reference to the `tool_use` frame's `id` (the block's
+   *  `tool_use_id`), when the bridge knows it. */
+  toolUseId: z.string().optional(),
 });
 export type ToolResultMessage = z.infer<typeof ToolResultMessage>;
 
@@ -407,8 +414,13 @@ export const BridgeFrame = z.discriminatedUnion('type', [
     type: z.literal('tool_use'),
     tool: z.string(),
     input: z.string(),
+    id: z.string().optional(),
   }),
-  z.object({ type: z.literal('tool_result'), output: z.string() }),
+  z.object({
+    type: z.literal('tool_result'),
+    output: z.string(),
+    toolUseId: z.string().optional(),
+  }),
   z.object({
     type: z.literal('permission_request'),
     requestId: z.string(),

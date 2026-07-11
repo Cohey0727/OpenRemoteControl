@@ -358,7 +358,13 @@ Two boundaries: browser ↔ `orc serve` on `/ws`, and bridge ↔
   tool_use / tool_result / permission_request / question / done /
   error, tagged with the clientId they came from; `question` is an
   AskUserQuestion relayed for remote answering, transient like
-  `permission_request` — never replayed from history). `text_delta` is a streaming
+  `permission_request` — never replayed from history). `tool_use`
+  carries an optional `id` and `tool_result` an optional `toolUseId`
+  (the stream's tool_use block id / back-reference, relayed by the
+  attach/channel bridges): the SPA folds each call + result into ONE
+  collapsed card with input and result nested inside, paired by id
+  when present, positionally within the turn otherwise — user-authored
+  bridges may omit both. `text_delta` is a streaming
   fragment of the in-progress reply — a bridge that has a token stream
   can send these (e.g. from `claude --include-partial-messages`) and
   the browser renders them live with a typing indicator while waiting;
