@@ -12,8 +12,9 @@
  *      `commands/orc.md`, so `git pull` updates it in place.
  *
  * Idempotent: existing open-rc entries (recognized by their command
- * containing "open-rc hook") are replaced, never duplicated, and all
- * other user hooks are preserved verbatim.
+ * containing "orc hook", or "open-rc hook" for pre-rename installs)
+ * are replaced, never duplicated, and all other user hooks are
+ * preserved verbatim.
  *
  * Usage:
  *   bun run scripts/install-hooks.ts --bin ~/.local/bin/orc
@@ -25,8 +26,13 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parseFlags } from '../src/cli/flags.ts';
 
-/** Marker every open-rc-managed hook command contains. */
-const HOOK_MARKER = 'open-rc hook';
+/** Markers an open-rc-managed hook command contains. The binary is
+ *  `orc` today (`<BIN_DIR>/orc hook <event>`); `open-rc hook` matches
+ *  entries installed before the rename. A mismatch here is not
+ *  cosmetic: setup dedupes and teardown removes by these markers, and
+ *  the stale `open-rc hook` marker alone let `orc hook` entries pile
+ *  up on every setup and survive teardown (found 2026-07-15). */
+const HOOK_MARKERS = ['orc hook', 'open-rc hook'] as const;
 
 /** Outer bound for the Stop/ask hooks. The browser-driven listening
  *  window is unlimited by design, so this is a backstop, not a
@@ -52,7 +58,7 @@ type Settings = Record<string, unknown> & {
 };
 
 const isOurs = (h: HookCommand): boolean =>
-  typeof h.command === 'string' && h.command.includes(HOOK_MARKER);
+  typeof h.command === 'string' && HOOK_MARKERS.some((m) => h.command.includes(m));
 
 /** Drop open-rc commands from a group list; drop groups left empty. */
 function withoutOurs(groups: HookGroup[]): HookGroup[] {
